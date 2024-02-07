@@ -8,7 +8,10 @@ def no_runner(body: str) -> func.HttpResponse:
 
     (and webhook successfully processed)
     """
-    return func.HttpResponse(body, status_code=230)
+    return func.HttpResponse(
+        body,
+        status_code=230,  # Custom status code for easier monitoring from GitHub webhook logs
+    )
 
 
 @app.route(route="job_queued", trigger_arg_name="request")
