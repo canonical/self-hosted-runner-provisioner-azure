@@ -23,7 +23,13 @@ def job_queued(req: func.HttpRequest) -> func.HttpResponse:
     if body["action"] != "queued":
         return no_runner('action != "queued"')
     labels = body["workflow_job"]["labels"]
-    for required_label in ("self-hosted", "data-platform", "ubuntu", "ARM64"):
+    for required_label in (
+        "self-hosted",
+        "data-platform",
+        "ubuntu",
+        "ARM64",
+        "4cpu16ram",
+    ):
         if required_label not in labels:
             return no_runner(f"{required_label=} missing from {labels=}")
     # TODO: provision runner
