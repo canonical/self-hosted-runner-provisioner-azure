@@ -1,25 +1,30 @@
 import azure.functions as func
-import logging
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
+
+def no_runner(body: str) -> func.HttpResponse:
+    """HTTP response if no runner provisioned
+    
+    (and webhook successfully processed)
+    """
+    return func.HttpResponse(body, status_code=230)
+
+
 @app.route(route="job_queued")
 def job_queued(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
-
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            name = req_body.get('name')
-
-    if name:
-        return func.HttpResponse(f"Hello, {name}. This HTTP triggered function executed successfully.")
-    else:
-        return func.HttpResponse(
-             "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
-             status_code=200
-        )
+    # TODO: validate https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+    if req.headers.get("X-GitHub-Event") != "workflow_job":
+        return func.HttpResponse("Invalid GitHub event", status_code=400)
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("No valid JSON data", status_code=400)
+    if body["action"] != "queued":
+        return no_runner('action != "queued"')
+    labels = body["workflow_job"]["labels"]
+    for required_label in ("self-hosted", "data-platform", "ubuntu", "ARM64"):
+        if required_label not in labels:
+            return no_runner(f"{required_label=} missing from {labels=}")
+    # TODO: provision runner
+    return func.HttpResponse("Runner provisioned", status_code=200)
