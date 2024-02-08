@@ -1,3 +1,5 @@
+/azure_subscription_id
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
