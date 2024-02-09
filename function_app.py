@@ -1,9 +1,10 @@
-import json
 import enum
+import json
+import os
 
+import azure.core.exceptions
 import azure.functions as func
 import azure.identity
-import azure.core.exceptions
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
 
@@ -51,11 +52,14 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     ):
         if required_label not in labels:
             return no_runner(f"{required_label=} missing from {labels=}")
-    credential = azure.identity.ManagedIdentityCredential()
-    with open("azure_subscription_id", "r") as file:
-        subscription_id = file.read().strip()
+    # Managed identity adds ~8 seconds
+    # GitHub webhooks have 10 second timeout
+    # (https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
+    # Use Azure Functions application settings (accessible as environment variables) instead of managed identity
+    credential = azure.identity.EnvironmentCredential()
+
     client = azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
-        credential, subscription_id
+        credential, os.environ["AZURE_SUBSCRIPTION_ID"]
     )
     job_id = body["workflow_job"]["id"]
     resource_group_name = f"test-runner-job{job_id}"
