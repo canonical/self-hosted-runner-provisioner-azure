@@ -3,6 +3,7 @@ import enum
 
 import azure.functions as func
 import azure.identity
+import azure.core.exceptions
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
 
@@ -23,7 +24,7 @@ def no_runner(body: str) -> func.HttpResponse:
     """
     return func.HttpResponse(
         body,
-        status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
+        status_code=240,  # Custom status code for easier monitoring from GitHub webhook logs
     )
 
 
@@ -131,10 +132,16 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Runner provisioned", status_code=200)
     elif action == Action.COMPLETED:
         # Delete resource group
-        client.resource_groups.begin_delete(
-            resource_group_name,
-            force_deletion_types="Microsoft.Compute/virtualMachines",
-        )
+        try:
+            client.resource_groups.begin_delete(
+                resource_group_name,
+                force_deletion_types="Microsoft.Compute/virtualMachines",
+            )
+        except azure.core.exceptions.ResourceNotFoundError:
+            return func.HttpResponse(
+                "Resource group already deleted",
+                status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
+            )
         return func.HttpResponse(
             "Resource group deleted",
             status_code=230,  # Custom status code for easier monitoring from GitHub webhook logs
