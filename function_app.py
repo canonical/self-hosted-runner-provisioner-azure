@@ -8,7 +8,6 @@ import azure.functions as func
 import azure.identity
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
-import requests
 
 REGION = "eastus2"
 
@@ -25,11 +24,8 @@ def get_client():
     # Use Azure Functions application settings (accessible as environment variables) instead of managed identity
     credential = azure.identity.EnvironmentCredential()
 
-    return (
-        azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
-            credential, os.environ["AZURE_SUBSCRIPTION_ID"]
-        ),
-        credential.get_token("https://management.azure.com/.default").token,
+    return azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
+        credential, os.environ["AZURE_SUBSCRIPTION_ID"]
     )
 
 
@@ -38,28 +34,25 @@ def get_client():
     arg_name="timer",
 )
 def cleanup(timer: func.TimerRequest) -> None:
-    client, token = get_client()
-    response = requests.get(
-        f'https://management.azure.com/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resources',
-        params={
-            "api-version": "2021-04-01",
-            "$filter": "tagName eq 'runner'",
-            # Undocumented API feature (https://stackoverflow.com/a/58830232)
-            # (Need to use `requests` instead of Azure python SDK)
-            "$expand": "createdTime",
-        },
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    response.raise_for_status()
-    # TODO: add pagination support
-    now = datetime.datetime.now()
-    for resource_group in response.json()["value"]:
-        created = func.meta._BaseConverter._parse_datetime(
-            resource_group["createdTime"]
-        )
-        if now - created > datetime.timedelta(hours=3, minutes=10):
+    # Patch `ResourceGroup` to include `created_time` attribute
+    # Based on `models.GenericResourceExpanded` source code
+    # Uses undocumented API feature (https://stackoverflow.com/a/58830232)
+    models.ResourceGroup._validation["created_time"] = {"readonly": True}
+    models.ResourceGroup._attribute_map["created_time"] = {
+        "key": "createdTime",
+        "type": "iso-8601",
+    }
+    client = get_client()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for resource_group in client.resource_groups.list(
+        filter="tagName eq 'runner'",
+        # Needed to include `createdTime` in HTTP response from Azure API
+        # Undocumented API feature (https://stackoverflow.com/a/58830232)
+        params={"$expand": "createdTime"},
+    ):
+        if now - resource_group.created_time > datetime.timedelta(hours=3, minutes=10):
             client.resource_groups.begin_delete(
-                resource_group["name"],
+                resource_group.name,
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
 
@@ -105,7 +98,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             return no_runner(f"{required_label=} missing from {labels=}")
     job_id = body["workflow_job"]["id"]
     resource_group_name = f"test-runner-job{job_id}"
-    client, _ = get_client()
+    client = get_client()
     if action == Action.QUEUED:
         # Provision VM
         resource_group = client.resource_groups.create_or_update(

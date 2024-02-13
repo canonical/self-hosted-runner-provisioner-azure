@@ -5,4 +5,3 @@
 azure-functions
 azure-identity
 azure-mgmt-resource
-requests>=2.31.0,<3
