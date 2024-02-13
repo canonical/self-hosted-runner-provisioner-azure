@@ -1,6 +1,7 @@
 import datetime
 import enum
 import json
+import logging
 import os
 
 import azure.core.exceptions
@@ -55,6 +56,7 @@ def cleanup(timer: func.TimerRequest) -> None:
                 resource_group.name,
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
+            logging.info(f"Deleted {resource_group.name=}")
 
 
 class Action(str, enum.Enum):
@@ -62,12 +64,17 @@ class Action(str, enum.Enum):
     COMPLETED = "completed"
 
 
+def response(body: str, status_code: int):
+    logging.info(f"Response {status_code=} {body=}")
+    return func.HttpResponse(body, status_code=status_code)
+
+
 def no_runner(body: str):
     """HTTP response if no runner provisioned
 
     (and webhook successfully processed)
     """
-    return func.HttpResponse(
+    return response(
         body,
         status_code=240,  # Custom status code for easier monitoring from GitHub webhook logs
     )
@@ -77,11 +84,11 @@ def no_runner(body: str):
 def job(request: func.HttpRequest) -> func.HttpResponse:
     # TODO: validate https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
     if request.headers.get("X-GitHub-Event") != "workflow_job":
-        return func.HttpResponse("Invalid GitHub event", status_code=400)
+        return response("Invalid GitHub event", status_code=400)
     try:
         body = request.get_json()
     except ValueError:
-        return func.HttpResponse("No valid JSON data", status_code=400)
+        return response("No valid JSON data", status_code=400)
     try:
         action = Action(body["action"])
     except ValueError as exception:
@@ -104,6 +111,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         resource_group = client.resource_groups.create_or_update(
             resource_group_name, models.ResourceGroup(location=REGION)
         )
+        logging.info(f"Created {resource_group_name=}")
         with open("vm_template.json", "r") as file:
             template = json.load(file)
         client.deployments.begin_create_or_update(
@@ -170,7 +178,8 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
                 )
             ),
         )
-        return func.HttpResponse("Runner provisioned", status_code=200)
+        logging.info("Created virtual machine")
+        return response("Runner provisioned", status_code=200)
     elif action == Action.COMPLETED:
         # Delete resource group
         try:
@@ -179,11 +188,11 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
         except azure.core.exceptions.ResourceNotFoundError:
-            return func.HttpResponse(
+            return response(
                 "Resource group already deleted",
                 status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
             )
-        return func.HttpResponse(
+        return response(
             "Resource group deleted",
             status_code=230,  # Custom status code for easier monitoring from GitHub webhook logs
         )
