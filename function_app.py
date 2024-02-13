@@ -1,3 +1,4 @@
+import datetime
 import enum
 import json
 import os
@@ -7,10 +8,60 @@ import azure.functions as func
 import azure.identity
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
+import requests
 
 REGION = "eastus2"
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+
+
+def get_client():
+    # Use function instead of global variable so that Azure detects app functions correctly even if
+    # credential environment variables are missing. (For easier troubleshooting)
+
+    # Managed identity adds ~8 seconds
+    # GitHub webhooks have 10 second timeout
+    # (https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
+    # Use Azure Functions application settings (accessible as environment variables) instead of managed identity
+    credential = azure.identity.EnvironmentCredential()
+
+    return (
+        azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
+            credential, os.environ["AZURE_SUBSCRIPTION_ID"]
+        ),
+        credential.get_token("https://management.azure.com/.default").token,
+    )
+
+
+@app.schedule(
+    schedule="*/30 * * * *",  # Every 30 minutes
+    arg_name="timer",
+)
+def cleanup(timer: func.TimerRequest) -> None:
+    client, token = get_client()
+    response = requests.get(
+        f'https://management.azure.com/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resources',
+        params={
+            "api-version": "2021-04-01",
+            "$filter": "tagName eq 'runner'",
+            # Undocumented API feature (https://stackoverflow.com/a/58830232)
+            # (Need to use `requests` instead of Azure python SDK)
+            "$expand": "createdTime",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    response.raise_for_status()
+    # TODO: add pagination support
+    now = datetime.datetime.now()
+    for resource_group in response.json()["value"]:
+        created = func.meta._BaseConverter._parse_datetime(
+            resource_group["createdTime"]
+        )
+        if now - created > datetime.timedelta(hours=3, minutes=10):
+            client.resource_groups.begin_delete(
+                resource_group["name"],
+                force_deletion_types="Microsoft.Compute/virtualMachines",
+            )
 
 
 class Action(str, enum.Enum):
@@ -18,7 +69,7 @@ class Action(str, enum.Enum):
     COMPLETED = "completed"
 
 
-def no_runner(body: str) -> func.HttpResponse:
+def no_runner(body: str):
     """HTTP response if no runner provisioned
 
     (and webhook successfully processed)
@@ -52,17 +103,9 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     ):
         if required_label not in labels:
             return no_runner(f"{required_label=} missing from {labels=}")
-    # Managed identity adds ~8 seconds
-    # GitHub webhooks have 10 second timeout
-    # (https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
-    # Use Azure Functions application settings (accessible as environment variables) instead of managed identity
-    credential = azure.identity.EnvironmentCredential()
-
-    client = azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
-        credential, os.environ["AZURE_SUBSCRIPTION_ID"]
-    )
     job_id = body["workflow_job"]["id"]
     resource_group_name = f"test-runner-job{job_id}"
+    client, _ = get_client()
     if action == Action.QUEUED:
         # Provision VM
         resource_group = client.resource_groups.create_or_update(
@@ -74,6 +117,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             resource_group.name,
             f"test-deployment-job{job_id}",
             models.Deployment(
+                # TODO: add runner tag
                 properties=models.DeploymentProperties(
                     template=template,
                     parameters={
