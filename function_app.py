@@ -38,6 +38,19 @@ def get_client():
     arg_name="timer",
 )
 def cleanup(timer: func.TimerRequest) -> None:
+    """Delete VMs that have been running for too long
+
+    During normal usage, VMs will be deleted by GitHub webhook (after GitHub Actions job
+    `timeout-minutes` exceeded
+    https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes)
+
+    This function exists in case
+    - GitHub webhook doesn't get sent
+    - GitHub Actions job doesn't have `timeout-minutes`
+    - for redundancy, in case this script don't process GitHub webhook correctly (e.g. bug in code,
+      expired secret)
+    to protect against accidental cloud resource usage.
+    """
     # Patch `ResourceGroup` to include `created_time` attribute
     # Based on `models.GenericResourceExpanded` source code
     # Uses undocumented API feature (https://stackoverflow.com/a/58830232)
@@ -97,6 +110,11 @@ def no_runner(body: str):
     methods=(func.HttpMethod.POST,),
 )
 def job(request: func.HttpRequest) -> func.HttpResponse:
+    """Create/delete VM in response to GitHub webhook
+
+    Triggered on `workflow_job` webhook
+    https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
+    """
     # TODO: validate https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
     if request.headers.get("X-GitHub-Event") != "workflow_job":
         return response("Invalid GitHub event", status_code=400)
@@ -222,6 +240,34 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     methods=(func.HttpMethod.POST,),
 )
 def tag(request: func.HttpRequest) -> func.HttpResponse:
+    """Add job ID to resource group tag
+
+    When a VM is created, we don't know what job the runner will pick up.
+
+    (Currently, we create VMs on demand [i.e. create for a job] but it's possible that the runner
+    picks up a different job that was queued first.)
+
+    When a job completes, we need to know which VM to delete.
+
+
+    Once a job is sent to the runner (once the job ID is available), we use a pre-job script to
+    trigger this function.
+    (https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/running-scripts-before-or-after-a-job)
+
+    Note: The script (trusted code) runs before the job (untrusted code).
+
+    This function can be run once per VM. (The resource group tag can only be set once.)
+
+    Subsequent calls return 403 Forbidden. This prevents malicious code in the job from updating
+    the resource group tag and preventing deletion of the VM.
+
+
+    To ensure that this function is run once per VM, we need to authenticate the VM.
+    This is accomplished with the Microsoft identity platform
+    (https://learn.microsoft.com/en-us/entra/identity-platform/)
+    and (system-assigned) managed identities (one per VM)
+    (https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview)
+    """
     unauthenticated = func.HttpResponse(status_code=401)
     try:
         client_principal = request.headers["x-ms-client-principal"]
