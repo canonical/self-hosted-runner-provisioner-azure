@@ -52,11 +52,18 @@ def cleanup(timer: func.TimerRequest) -> None:
         params={"$expand": "createdTime"},
     ):
         if now - resource_group.created_time > datetime.timedelta(hours=3, minutes=10):
-            client.resource_groups.begin_delete(
-                resource_group.name,
-                force_deletion_types="Microsoft.Compute/virtualMachines",
-            )
-            logging.info(f"Deleted {resource_group.name=}")
+            try:
+                client.resource_groups.begin_delete(
+                    resource_group.name,
+                    force_deletion_types="Microsoft.Compute/virtualMachines",
+                )
+            except azure.core.exceptions.ResourceNotFoundError:
+                # Resource group deletion might have started in an earlier execution
+                # (It is possible that the resource group, while in deletion, existed during
+                # `resource_groups.list()` but does not exist now.)
+                logging.info(f"{resource_group.name} already deleted")
+            else:
+                logging.info(f"Deleted {resource_group.name=}")
 
 
 class Action(str, enum.Enum):
