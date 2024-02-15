@@ -1,18 +1,21 @@
+import base64
 import datetime
 import enum
 import json
 import logging
 import os
+import time
 
 import azure.core.exceptions
 import azure.functions as func
 import azure.identity
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
+import requests
 
 REGION = "eastus2"
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+app = func.FunctionApp()
 
 
 def get_client():
@@ -71,7 +74,7 @@ class Action(str, enum.Enum):
     COMPLETED = "completed"
 
 
-def response(body: str, status_code: int):
+def response(body: str = None, *, status_code: int):
     logging.info(f"Response {status_code=} {body=}")
     return func.HttpResponse(body, status_code=status_code)
 
@@ -87,7 +90,12 @@ def no_runner(body: str):
     )
 
 
-@app.route(route="job", trigger_arg_name="request")
+@app.route(
+    route="job",
+    trigger_arg_name="request",
+    auth_level=func.AuthLevel.FUNCTION,
+    methods=(func.HttpMethod.POST,),
+)
 def job(request: func.HttpRequest) -> func.HttpResponse:
     # TODO: validate https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
     if request.headers.get("X-GitHub-Event") != "workflow_job":
@@ -111,6 +119,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         if required_label not in labels:
             return no_runner(f"{required_label=} missing from {labels=}")
     job_id = body["workflow_job"]["id"]
+    # TODO: remove job id from resource group name
     resource_group_name = f"test-runner-job{job_id}"
     client = get_client()
     if action == Action.QUEUED:
@@ -189,6 +198,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         return response("Runner provisioned", status_code=200)
     elif action == Action.COMPLETED:
         # Delete resource group
+        # TODO use tag instead of resource group name
         try:
             client.resource_groups.begin_delete(
                 resource_group_name,
@@ -203,3 +213,133 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             "Resource group deleted",
             status_code=230,  # Custom status code for easier monitoring from GitHub webhook logs
         )
+
+
+@app.route(
+    route="tag",
+    trigger_arg_name="request",
+    auth_level=func.AuthLevel.ANONYMOUS,
+    methods=(func.HttpMethod.POST,),
+)
+def tag(request: func.HttpRequest) -> func.HttpResponse:
+    unauthenticated = func.HttpResponse(status_code=401)
+    try:
+        client_principal = request.headers["x-ms-client-principal"]
+    except KeyError as exception:
+        logging.info(str(exception))
+        return unauthenticated
+    cp_claims = json.loads(base64.b64decode(client_principal).decode())["claims"]
+    cp_audience = [claim["val"] for claim in cp_claims if claim["typ"] == "aud"]
+    if (
+        len(cp_audience) != 1
+        or cp_audience[0] != f'https://{os.environ["WEBSITE_HOSTNAME"]}/'
+    ):
+        logging.info("Invalid client principal audience")
+        return unauthenticated
+    for _ in range(15):
+        response_ = requests.get(
+            f'https://{os.environ["WEBSITE_HOSTNAME"]}/.auth/me',
+            headers={"X-ZUMO-AUTH": request.headers["x-zumo-auth"]},
+        )
+        response_.raise_for_status()
+        data = response_.json()
+        if isinstance(data, list) and len(data) == 1:
+            break
+        elif isinstance(data, list) and len(data) > 1:
+            raise ValueError("len(data) > 1")
+        # Workaround for `/.auth/me` sometimes returning no data
+        time.sleep(1)
+        logging.info("Retrying /.auth/me")
+    else:
+        raise ValueError("len(data) != 1. Potential issue with token store")
+    claims = data[0]["user_claims"]
+    required_claims = {
+        "aud": None,
+        "iss": None,
+        "http://schemas.microsoft.com/identity/claims/identityprovider": None,
+        "http://schemas.microsoft.com/identity/claims/tenantid": None,
+        "http://schemas.microsoft.com/identity/claims/objectidentifier": None,
+    }
+    for claim in claims:
+        typ = claim["typ"]
+        if typ in required_claims:
+            if required_claims[typ] is None:
+                required_claims[typ] = claim["val"]
+            else:
+                raise ValueError("Multiple claims of same type")
+    if required_claims["aud"] != f'api://{os.environ["WEBSITE_AUTH_CLIENT_ID"]}':
+        logging.info("Invalid audience")
+        return unauthenticated
+    if (
+        required_claims["iss"]
+        != f'https://sts.windows.net/{os.environ["AZURE_TENANT_ID"]}/'
+    ):
+        logging.info("Invalid issuer")
+        return unauthenticated
+    if (
+        required_claims["http://schemas.microsoft.com/identity/claims/identityprovider"]
+        != f'https://sts.windows.net/{os.environ["AZURE_TENANT_ID"]}/'
+    ):
+        logging.info("Invalid identity provider")
+        return unauthenticated
+    if (
+        required_claims["http://schemas.microsoft.com/identity/claims/tenantid"]
+        != os.environ["AZURE_TENANT_ID"]
+    ):
+        logging.info("Invalid tenant ID")
+        return unauthenticated
+    vm_managed_identity_object_id = required_claims[
+        "http://schemas.microsoft.com/identity/claims/objectidentifier"
+    ]
+    if not vm_managed_identity_object_id:
+        logging.info("Missing VM ID")
+        return unauthenticated
+
+    client = get_client()
+    resources = client.resources.list(
+        filter=f"identity/principalId eq '{vm_managed_identity_object_id}' and resourceType eq 'Microsoft.Compute/virtualMachines'"
+    )
+    iterator = iter(resources)
+    try:
+        resource = next(iterator)
+    except StopIteration:
+        logging.info("No VMs found with ID")
+        return unauthenticated
+    try:
+        next(iterator)
+    except StopIteration:
+        pass
+    else:
+        raise ValueError("Multiple VMs found with ID")
+    # Example: "/subscriptions/9b6fef27-c342-4e4d-b649-e94a7a9a4588/resourceGroups/runner-job21601933747/providers/Microsoft.Compute/virtualMachines/runner"
+    id: str = resource.id
+    prefix = f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resourceGroups/'
+    if not id.startswith(prefix):
+        raise ValueError("Unrecognized resource ID format")
+    id = id.removeprefix(prefix)
+    if "/" not in id:
+        raise ValueError("Unrecognized resource ID format")
+    resource_group_name = id.split("/")[0]
+
+    resource_group = client.resource_groups.get(resource_group_name)
+    tags = resource_group.tags or {}
+    if "runner" not in tags:
+        logging.info("runner tag missing")
+        return unauthenticated
+    if "job" in tags:
+        return response("job tag already added", status_code=403)
+    try:
+        job_id = request.get_json()["job_id"]
+        if not isinstance(job_id, int):
+            raise ValueError
+    except (ValueError, KeyError):
+        return response("Invalid job id", status_code=400)
+    client.tags.begin_update_at_scope(
+        resource_group.id,
+        models.TagsPatchResource(
+            operation=models.TagsPatchOperation.MERGE,
+            properties=models.Tags(tags={"job": str(job_id)}),
+        ),
+    )
+    return response("job tag added", status_code=200)
+    # TODO future improvement: create dns record (for convenient ssh)
