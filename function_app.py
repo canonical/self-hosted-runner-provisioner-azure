@@ -14,6 +14,11 @@ import azure.mgmt.resource.resources.v2022_09_01.models as models
 import requests
 
 REGION = "eastus2"
+# This limit should not be exceeded during normal usage
+# If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
+# provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
+# provisioned to catch up with the jobs that were skipped.)
+CONCURRENT_RUNNER_LIMIT = 50
 
 app = func.FunctionApp()
 
@@ -151,6 +156,11 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     job_id = body["workflow_job"]["id"]
     client = get_client()
     if action == Action.QUEUED:
+        provisioned_runners = list(
+            client.resource_groups.list(filter=f"tagName eq 'runner'")
+        )
+        if len(provisioned_runners) >= CONCURRENT_RUNNER_LIMIT:
+            return response("Concurrent runner limit exceeded", status_code=290)
         # Provision VM
         resource_group = client.resource_groups.create_or_update(
             f'test-runner-{request.headers["X-GitHub-Delivery"]}',
