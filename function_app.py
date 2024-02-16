@@ -34,7 +34,7 @@ def get_client():
 
 
 @app.schedule(
-    schedule="*/30 * * * *",  # Every 30 minutes
+    schedule="*/5 * * * *",  # Every 5 minutes
     arg_name="timer",
 )
 def cleanup(timer: func.TimerRequest) -> None:
@@ -49,6 +49,8 @@ def cleanup(timer: func.TimerRequest) -> None:
     - GitHub Actions job doesn't have `timeout-minutes`
     - for redundancy, in case this script don't process GitHub webhook correctly (e.g. bug in code,
       expired secret)
+    - for redundancy, in case a job isn't started on the VM and (our code on the) VM doesn't delete
+      itself
     to protect against accidental cloud resource usage.
     """
     # Patch `ResourceGroup` to include `created_time` attribute
@@ -67,7 +69,13 @@ def cleanup(timer: func.TimerRequest) -> None:
         # Undocumented API feature (https://stackoverflow.com/a/58830232)
         params={"$expand": "createdTime"},
     ):
-        if now - resource_group.created_time > datetime.timedelta(hours=3, minutes=10):
+        delta = now - resource_group.created_time
+        past_long_timeout = delta > datetime.timedelta(hours=3, minutes=10)
+        if past_long_timeout or (
+            # Delete VMs that haven't started a job
+            "job" not in (resource_group.tags or {})
+            and delta > datetime.timedelta(minutes=10)
+        ):
             try:
                 client.resource_groups.begin_delete(
                     resource_group.name,
@@ -77,9 +85,11 @@ def cleanup(timer: func.TimerRequest) -> None:
                 # Resource group deletion might have started in an earlier execution
                 # (It is possible that the resource group, while in deletion, existed during
                 # `resource_groups.list()` but does not exist now.)
-                logging.info(f"{resource_group.name} already deleted")
+                logging.info(
+                    f"{resource_group.name=} already deleted. {past_long_timeout=}"
+                )
             else:
-                logging.info(f"Deleted {resource_group.name=}")
+                logging.info(f"Deleted {resource_group.name=}. {past_long_timeout=}")
 
 
 class Action(str, enum.Enum):
