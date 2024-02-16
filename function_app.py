@@ -137,15 +137,14 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         if required_label not in labels:
             return no_runner(f"{required_label=} missing from {labels=}")
     job_id = body["workflow_job"]["id"]
-    # TODO: remove job id from resource group name
-    resource_group_name = f"test-runner-job{job_id}"
     client = get_client()
     if action == Action.QUEUED:
         # Provision VM
         resource_group = client.resource_groups.create_or_update(
-            resource_group_name, models.ResourceGroup(location=REGION)
+            f'test-runner-{request.headers["X-GitHub-Delivery"]}',
+            models.ResourceGroup(location=REGION),
         )
-        logging.info(f"Created {resource_group_name=}")
+        logging.info(f"Created {resource_group.name=}")
         with open("vm_template.json", "r") as file:
             template = json.load(file)
         client.deployments.begin_create_or_update(
@@ -216,16 +215,27 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         return response("Runner provisioned", status_code=200)
     elif action == Action.COMPLETED:
         # Delete resource group
-        # TODO use tag instead of resource group name
+        resource_groups = list(
+            client.resource_groups.list(
+                filter=f"tagName eq 'job' and tagValue eq '{job_id}'"
+            )
+        )
+        if len(resource_groups) > 1:
+            raise ValueError("Multiple VMs with same job")
+        elif len(resource_groups) == 0:
+            return response(
+                "Resource group not found (probably already deleted)",
+                status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
+            )
         try:
             client.resource_groups.begin_delete(
-                resource_group_name,
+                resource_groups[0].name,
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
         except azure.core.exceptions.ResourceNotFoundError:
             return response(
                 "Resource group already deleted",
-                status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
+                status_code=232,  # Custom status code for easier monitoring from GitHub webhook logs
             )
         return response(
             "Resource group deleted",
