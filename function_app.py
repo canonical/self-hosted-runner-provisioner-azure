@@ -92,8 +92,10 @@ def response(body: str = None, *, status_code: int):
     return func.HttpResponse(body, status_code=status_code)
 
 
-def no_runner(body: str):
-    """HTTP response if no runner provisioned
+def no_operation(body: str):
+    """HTTP response if webhook requires no operation
+
+    (e.g. GitHub-hosted runner queued, `in_progress` webhook action)
 
     (and webhook successfully processed)
     """
@@ -125,7 +127,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     try:
         action = Action(body["action"])
     except ValueError as exception:
-        return no_runner(str(exception))
+        return no_operation(str(exception))
     labels = body["workflow_job"]["labels"]
     for required_label in (
         "self-hosted",
@@ -135,7 +137,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         "4cpu16ram",
     ):
         if required_label not in labels:
-            return no_runner(f"{required_label=} missing from {labels=}")
+            return no_operation(f"{required_label=} missing from {labels=}")
     job_id = body["workflow_job"]["id"]
     client = get_client()
     if action == Action.QUEUED:
