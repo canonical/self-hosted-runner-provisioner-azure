@@ -1,233 +1,159 @@
 {
-    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
-    "parameters": {
-        "location": {
-            "type": "string"
-        },
-        "networkInterfaceName1": {
-            "type": "string"
-        },
-        "enableAcceleratedNetworking": {
-            "type": "bool"
-        },
-        "networkSecurityGroupName": {
-            "type": "string"
-        },
-        "networkSecurityGroupRules": {
-            "type": "array"
-        },
-        "subnetName": {
-            "type": "string"
-        },
-        "virtualNetworkName": {
-            "type": "string"
-        },
-        "addressPrefixes": {
-            "type": "array"
-        },
-        "subnets": {
-            "type": "array"
-        },
-        "publicIpAddressName1": {
-            "type": "string"
-        },
-        "publicIpAddressType": {
-            "type": "string"
-        },
-        "publicIpAddressSku": {
-            "type": "string"
-        },
-        "pipDeleteOption": {
-            "type": "string"
-        },
-        "virtualMachineName": {
-            "type": "string"
-        },
-        "virtualMachineName1": {
-            "type": "string"
-        },
-        "virtualMachineComputerName1": {
-            "type": "string"
-        },
-        "virtualMachineRG": {
-            "type": "string"
-        },
-        "osDiskType": {
-            "type": "string"
-        },
-        "ephemeralDiskType": {
-            "type": "string"
-        },
-        "osDiskDeleteOption": {
-            "type": "string"
-        },
-        "virtualMachineSize": {
-            "type": "string"
-        },
-        "nicDeleteOption": {
-            "type": "string"
-        },
-        "hibernationEnabled": {
-            "type": "bool"
-        },
-        "adminUsername": {
-            "type": "string"
-        },
-        "adminPublicKey": {
-            "type": "secureString"
-        },
-        "virtualMachine1Zone": {
-            "type": "string"
-        }
-    },
-    "variables": {
-        "nsgId": "[resourceId(resourceGroup().name, 'Microsoft.Network/networkSecurityGroups', parameters('networkSecurityGroupName'))]",
-        "vnetName": "[parameters('virtualNetworkName')]",
-        "vnetId": "[resourceId(resourceGroup().name,'Microsoft.Network/virtualNetworks', parameters('virtualNetworkName'))]",
-        "subnetRef": "[concat(variables('vnetId'), '/subnets/', parameters('subnetName'))]"
-    },
     "resources": [
         {
-            "name": "[parameters('networkInterfaceName1')]",
-            "type": "Microsoft.Network/networkInterfaces",
-            "apiVersion": "2022-11-01",
-            "location": "[parameters('location')]",
+            "name": "runner-public-ip",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "deleteOption": "Delete",
+                "publicIPAllocationMethod": "Dynamic"
+            }
+        },
+        {
+            "name": "runner-nsg",
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "nsg-rule-ssh",
+                        "properties": {
+                            "access": "Allow",
+                            "destinationAddressPrefix": "*",
+                            "destinationPortRange": "22",
+                            "direction": "Inbound",
+                            "priority": 100,
+                            "protocol": "Tcp",
+                            "sourceAddressPrefix": "*",
+                            "sourcePortRange": "*"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "runner-virtual-network",
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
             "dependsOn": [
-                "[concat('Microsoft.Network/networkSecurityGroups/', parameters('networkSecurityGroupName'))]",
-                "[concat('Microsoft.Network/virtualNetworks/', parameters('virtualNetworkName'))]",
-                "[concat('Microsoft.Network/publicIpAddresses/', parameters('publicIpAddressName1'))]"
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'runner-nsg')]"
             ],
             "properties": {
-                "ipConfigurations": [
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/16"
+                    ]
+                },
+                "subnets": [
                     {
-                        "name": "ipconfig1",
+                        "name": "runner-virtual-network-subnet",
                         "properties": {
-                            "subnet": {
-                                "id": "[variables('subnetRef')]"
-                            },
-                            "privateIPAllocationMethod": "Dynamic",
-                            "publicIpAddress": {
-                                "id": "[resourceId(resourceGroup().name, 'Microsoft.Network/publicIpAddresses', parameters('publicIpAddressName1'))]",
-                                "properties": {
-                                    "deleteOption": "[parameters('pipDeleteOption')]"
-                                }
+                            "addressPrefix": "10.0.0.0/24",
+                            "networkSecurityGroup": {
+                                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'runner-nsg')]"
                             }
                         }
                     }
-                ],
-                "enableAcceleratedNetworking": "[parameters('enableAcceleratedNetworking')]",
-                "networkSecurityGroup": {
-                    "id": "[variables('nsgId')]"
-                }
+                ]
             }
         },
         {
-            "name": "[parameters('networkSecurityGroupName')]",
-            "type": "Microsoft.Network/networkSecurityGroups",
-            "apiVersion": "2019-02-01",
-            "location": "[parameters('location')]",
-            "properties": {
-                "securityRules": "[parameters('networkSecurityGroupRules')]"
-            }
-        },
-        {
-            "name": "[parameters('virtualNetworkName')]",
-            "type": "Microsoft.Network/virtualNetworks",
-            "apiVersion": "2021-05-01",
-            "location": "[parameters('location')]",
-            "properties": {
-                "addressSpace": {
-                    "addressPrefixes": "[parameters('addressPrefixes')]"
-                },
-                "subnets": "[parameters('subnets')]"
-            }
-        },
-        {
-            "name": "[parameters('publicIpAddressName1')]",
-            "type": "Microsoft.Network/publicIpAddresses",
-            "apiVersion": "2020-08-01",
-            "location": "[parameters('location')]",
-            "properties": {
-                "publicIpAllocationMethod": "[parameters('publicIpAddressType')]"
-            },
-            "sku": {
-                "name": "[parameters('publicIpAddressSku')]"
-            },
-            "zones": [
-                "[parameters('virtualMachine1Zone')]"
-            ]
-        },
-        {
-            "name": "[parameters('virtualMachineName1')]",
-            "type": "Microsoft.Compute/virtualMachines",
-            "apiVersion": "2022-11-01",
-            "location": "[parameters('location')]",
+            "name": "runner-network-interface",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
             "dependsOn": [
-                "[concat('Microsoft.Network/networkInterfaces/', parameters('networkInterfaceName1'))]"
+                "[resourceId('Microsoft.Network/publicIPAddresses', 'runner-public-ip')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'runner-virtual-network')]"
             ],
             "properties": {
-                "hardwareProfile": {
-                    "vmSize": "[parameters('virtualMachineSize')]"
-                },
-                "storageProfile": {
-                    "osDisk": {
-                        "createOption": "fromImage",
-                        "managedDisk": {
-                            "storageAccountType": "[parameters('osDiskType')]"
-                        },
-                        "caching": "ReadOnly",
-                        "diffDiskSettings": {
-                            "option": "Local",
-                            "placement": "[parameters('ephemeralDiskType')]"
-                        },
-                        "deleteOption": "[parameters('osDiskDeleteOption')]"
-                    },
-                    "imageReference": {
-                        "publisher": "canonical",
-                        "offer": "0001-com-ubuntu-server-jammy",
-                        "sku": "22_04-lts-arm64",
-                        "version": "latest"
+                "enableAcceleratedNetworking": true,
+                "ipConfigurations": [
+                    {
+                        "name": "ip-config",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'runner-public-ip')]",
+                                "properties": {
+                                    "deleteOption": "Delete"
+                                }
+                            },
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'runner-virtual-network', 'runner-virtual-network-subnet')]"
+                            }
+                        }
                     }
+                ]
+            }
+        },
+        {
+            "name": "runner",
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'runner-network-interface')]"
+            ],
+            "properties": {
+                "additionalCapabilities": {
+                    "hibernationEnabled": false
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": false
+                    }
+                },
+                "hardwareProfile": {
+                    "vmSize": "Standard_D4pds_v5"
                 },
                 "networkProfile": {
                     "networkInterfaces": [
                         {
-                            "id": "[resourceId('Microsoft.Network/networkInterfaces', parameters('networkInterfaceName1'))]",
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'runner-network-interface')]",
                             "properties": {
-                                "deleteOption": "[parameters('nicDeleteOption')]"
+                                "deleteOption": "Delete"
                             }
                         }
                     ]
                 },
-                "additionalCapabilities": {
-                    "hibernationEnabled": false
-                },
                 "osProfile": {
-                    "computerName": "[parameters('virtualMachineComputerName1')]",
-                    "adminUsername": "[parameters('adminUsername')]",
+                    "computerName": "runner",
+                    "adminUsername": "runner",
                     "linuxConfiguration": {
                         "disablePasswordAuthentication": true,
                         "ssh": {
                             "publicKeys": [
                                 {
-                                    "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
-                                    "keyData": "[parameters('adminPublicKey')]"
+                                    "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCL7VlyDLOrDrcEZoPej62PE65QaG5GLRRif+WpGdWEbuQLPmtSOekdFiHsZ16+FHsMuE+gWyVASXTWaU2uKe8F0Ef76wFsBZ8q9EkfVE3xwewmduV79POYpuYWdvVrA95JndQv3nNo8ntdjRUzPhN3YwGGbS35wnp3yf0sEJ+VGjvns7hrjh75jctA8lwrPGYlVfhuCWhxr8UMIXyVdFQ3CHd6fWXqWnHmcAG2FLbku0NKSmub5IYxNW/fh8qd+4g5ZD5jp7ejTidf7D6uSAtBbjv2xthGO2Mph+d8M7s7lhtMAlZDPoVJqmz58rk1cvHDaCID4+aK50ym287qb8+5VNzBycxxA3BmE3ukfdjHm6Rrp//M3/HcJBOEjkRaigXIJ2luj8d0iisG+6J00PHyPKyFHK0LWTVDZ5ib9kT11alpVIYqwHaiNoW/NkDvoHkF0hs+aM/A5xGRt6Y1znSqbgSjeI0mvwmd8VdO/aVZrYgW8cfCcVfNc0dSBI3JR6WDJFt0yUJxl05RYxHzMDtVEjmMbY2iUr+WfNBQdkh7kxD5K67DSMDvo130lJauNagz5VDUo3GVVfby0hXRWxG+1XP7DgeKtmR02ZwwMZxMC26F5Y6RMEObDC6YhJtqwV7cqovX105aDbZgtS3Ym/vKlcpfZhJgr9zljjplJxKfLQ== carlcsaposs@laptop",
+                                    "path": "/home/runner/.ssh/authorized_keys"
                                 }
                             ]
                         }
                     }
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "offer": "0001-com-ubuntu-server-jammy",
+                        "publisher": "canonical",
+                        "sku": "22_04-lts-arm64",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "createOption": "fromImage",
+                        "diskSizeGB": 150,
+                        "diffDiskSettings": {
+                            "option": "Local",
+                            "placement": "ResourceDisk"
+                        }
+                    }
                 }
-            },
-            "zones": [
-                "[parameters('virtualMachine1Zone')]"
-            ]
+            }
         }
-    ],
-    "outputs": {
-        "adminUsername": {
-            "type": "string",
-            "value": "[parameters('adminUsername')]"
-        }
-    }
+    ]
 }

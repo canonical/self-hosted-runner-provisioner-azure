@@ -1,6 +1,7 @@
 {
   "recommendations": [
     "ms-azuretools.vscode-azurefunctions",
+    "msazurermtools.azurerm-vscode-tools",
     "ms-python.python"
   ]
 }

@@ -183,61 +183,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             f"test-deployment-job{job_id}",
             models.Deployment(
                 properties=models.DeploymentProperties(
-                    template=template,
-                    parameters={
-                        "location": {"value": REGION},
-                        "networkInterfaceName1": {"value": "test-runner-1931_z1"},
-                        "enableAcceleratedNetworking": {"value": True},
-                        "networkSecurityGroupName": {"value": "test-runner-2-nsg"},
-                        "networkSecurityGroupRules": {
-                            "value": [
-                                {
-                                    "name": "SSH",
-                                    "properties": {
-                                        "priority": 300,
-                                        "protocol": "TCP",
-                                        "access": "Allow",
-                                        "direction": "Inbound",
-                                        "sourceAddressPrefix": "*",
-                                        "sourcePortRange": "*",
-                                        "destinationAddressPrefix": "*",
-                                        "destinationPortRange": "22",
-                                    },
-                                }
-                            ]
-                        },
-                        "subnetName": {"value": "default"},
-                        "virtualNetworkName": {"value": "test-runner-2-vnet"},
-                        "addressPrefixes": {"value": ["10.0.0.0/16"]},
-                        "subnets": {
-                            "value": [
-                                {
-                                    "name": "default",
-                                    "properties": {"addressPrefix": "10.0.0.0/24"},
-                                }
-                            ]
-                        },
-                        "publicIpAddressName1": {"value": "test-runner-2-ip"},
-                        "publicIpAddressType": {"value": "Static"},
-                        "publicIpAddressSku": {"value": "Standard"},
-                        "pipDeleteOption": {"value": "Delete"},
-                        "virtualMachineName": {"value": "test-runner-2"},
-                        "virtualMachineName1": {"value": "test-runner-2"},
-                        "virtualMachineComputerName1": {"value": "test-runner-2"},
-                        "virtualMachineRG": {"value": resource_group.name},
-                        "osDiskType": {"value": "Standard_LRS"},
-                        "ephemeralDiskType": {"value": "ResourceDisk"},
-                        "osDiskDeleteOption": {"value": "Delete"},
-                        "virtualMachineSize": {"value": "Standard_D4pds_v5"},
-                        "nicDeleteOption": {"value": "Delete"},
-                        "hibernationEnabled": {"value": False},
-                        "adminUsername": {"value": "azureuser"},
-                        "adminPublicKey": {
-                            "value": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCL7VlyDLOrDrcEZoPej62PE65QaG5GLRRif+WpGdWEbuQLPmtSOekdFiHsZ16+FHsMuE+gWyVASXTWaU2uKe8F0Ef76wFsBZ8q9EkfVE3xwewmduV79POYpuYWdvVrA95JndQv3nNo8ntdjRUzPhN3YwGGbS35wnp3yf0sEJ+VGjvns7hrjh75jctA8lwrPGYlVfhuCWhxr8UMIXyVdFQ3CHd6fWXqWnHmcAG2FLbku0NKSmub5IYxNW/fh8qd+4g5ZD5jp7ejTidf7D6uSAtBbjv2xthGO2Mph+d8M7s7lhtMAlZDPoVJqmz58rk1cvHDaCID4+aK50ym287qb8+5VNzBycxxA3BmE3ukfdjHm6Rrp//M3/HcJBOEjkRaigXIJ2luj8d0iisG+6J00PHyPKyFHK0LWTVDZ5ib9kT11alpVIYqwHaiNoW/NkDvoHkF0hs+aM/A5xGRt6Y1znSqbgSjeI0mvwmd8VdO/aVZrYgW8cfCcVfNc0dSBI3JR6WDJFt0yUJxl05RYxHzMDtVEjmMbY2iUr+WfNBQdkh7kxD5K67DSMDvo130lJauNagz5VDUo3GVVfby0hXRWxG+1XP7DgeKtmR02ZwwMZxMC26F5Y6RMEObDC6YhJtqwV7cqovX105aDbZgtS3Ym/vKlcpfZhJgr9zljjplJxKfLQ== carlcsaposs@laptop"
-                        },
-                        "virtualMachine1Zone": {"value": "1"},
-                    },
-                    mode=models.DeploymentMode.COMPLETE,
+                    template=template, mode=models.DeploymentMode.COMPLETE
                 )
             ),
         )
