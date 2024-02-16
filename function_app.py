@@ -164,7 +164,16 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         # Provision VM
         resource_group = client.resource_groups.create_or_update(
             f'test-runner-{request.headers["X-GitHub-Delivery"]}',
-            models.ResourceGroup(location=REGION),
+            models.ResourceGroup(
+                location=REGION,
+                tags={
+                    "runner": "",
+                    "runners": "",
+                    "team": "data-platform",
+                    "architecture": "ARM64",
+                    "size": "4cpu16ram",
+                },
+            ),
         )
         logging.info(f"Created {resource_group.name=}")
         with open("vm_template.json", "r") as file:
@@ -173,7 +182,6 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             resource_group.name,
             f"test-deployment-job{job_id}",
             models.Deployment(
-                # TODO: add runner tag
                 properties=models.DeploymentProperties(
                     template=template,
                     parameters={
