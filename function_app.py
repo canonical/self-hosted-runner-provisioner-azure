@@ -240,6 +240,7 @@ python3 -m pip install pipx
 python3 -m pipx ensurepath
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 EOF
+ln -s /usr/bin/python3 /usr/bin/python
 runuser runner --login << 'EOF'
 set -e
 mkdir actions-runner && cd actions-runner
