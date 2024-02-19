@@ -183,7 +183,13 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
             f"test-deployment-job{job_id}",
             models.Deployment(
                 properties=models.DeploymentProperties(
-                    template=template, mode=models.DeploymentMode.COMPLETE
+                    template=template,
+                    parameters={
+                        "delete_vm_custom_role_id": {
+                            "value": os.environ["DELETE_VM_CUSTOM_ROLE_ID"]
+                        }
+                    },
+                    mode=models.DeploymentMode.COMPLETE,
                 )
             ),
         )

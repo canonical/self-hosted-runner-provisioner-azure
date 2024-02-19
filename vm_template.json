@@ -1,6 +1,11 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
+    "parameters": {
+        "delete_vm_custom_role_id": {
+            "type": "string"
+        }
+    },
     "resources": [
         {
             "name": "runner-public-ip",
@@ -100,6 +105,7 @@
             "dependsOn": [
                 "[resourceId('Microsoft.Network/networkInterfaces', 'runner-network-interface')]"
             ],
+            "identity": { "type": "SystemAssigned" },
             "properties": {
                 "additionalCapabilities": {
                     "hibernationEnabled": false
@@ -153,6 +159,19 @@
                         }
                     }
                 }
+            }
+        },
+        {
+            "name": "[guid(resourceGroup().id, 'runner-role-assignment')]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', 'runner')]"
+            ],
+            "properties": {
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', 'runner'), '2023-03-01', 'Full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', parameters('delete_vm_custom_role_id'))]"
             }
         }
     ]
