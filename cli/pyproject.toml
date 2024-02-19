@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "azure-runner-provisioner-cli"
+version = "0.1.0"
+description = ""
+authors = ["Carl Csaposs <carl.csaposs@canonical.com>"]
+readme = "README.md"
+packages = [{include = "azure_runner_provisioner_cli"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
