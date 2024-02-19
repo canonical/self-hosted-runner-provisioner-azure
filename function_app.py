@@ -14,6 +14,7 @@ import azure.mgmt.resource.resources.v2022_09_01.models as models
 import requests
 
 REGION = "eastus2"
+RUNNER_GROUP_ID = 1
 # This limit should not be exceeded during normal usage
 # If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
 # provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
@@ -161,9 +162,50 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         )
         if len(provisioned_runners) >= CONCURRENT_RUNNER_LIMIT:
             return response("Concurrent runner limit exceeded", status_code=290)
+        response_ = requests.get(
+            "https://api.github.com/orgs/canonical-test2/actions/runners/downloads",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                # TODO: use GitHub App & Azure Key Vault instead of PAT
+                "Authorization": f'Bearer {os.environ["GITHUB_PAT"]}',
+            },
+        )
+        response_.raise_for_status()
+        downloads = [
+            download
+            for download in response_.json()
+            if download["os"] == "linux" and download["architecture"] == "arm64"
+        ]
+        if len(downloads) != 1:
+            raise ValueError("len(downloads) != 1")
+        download = downloads[0]
+        resource_group_name = f'test-runner-{request.headers["X-GitHub-Delivery"]}'
+        response_ = requests.post(
+            "https://api.github.com/orgs/canonical-test2/actions/runners/generate-jitconfig",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                # TODO: use GitHub App & Azure Key Vault instead of PAT
+                "Authorization": f'Bearer {os.environ["GITHUB_PAT"]}',
+            },
+            json={
+                "name": resource_group_name,
+                "runner_group_id": RUNNER_GROUP_ID,
+                "labels": [
+                    "self-hosted",
+                    "data-platform",
+                    "ubuntu",
+                    "ARM64",
+                    "4cpu16ram",
+                ],
+            },
+        )
+        response_.raise_for_status()
+        jit_config = response_.json()["encoded_jit_config"]
         # Provision VM
         resource_group = client.resource_groups.create_or_update(
-            f'test-runner-{request.headers["X-GitHub-Delivery"]}',
+            resource_group_name,
             models.ResourceGroup(
                 location=REGION,
                 tags={
@@ -187,7 +229,29 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
                     parameters={
                         "delete_vm_custom_role_id": {
                             "value": os.environ["DELETE_VM_CUSTOM_ROLE_ID"]
-                        }
+                        },
+                        "cloud_init": {
+                            "value": f"""#!/bin/bash
+apt-get update
+apt-get install python3-pip python3-venv -y
+runuser runner --login << 'EOF'
+set -e
+python3 -m pip install pipx
+python3 -m pipx ensurepath
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+EOF
+runuser runner --login << 'EOF'
+set -e
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner.tar.gz -L '{download["download_url"]}'
+echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
+tar xzf ./actions-runner.tar.gz
+./run.sh --jitconfig '{jit_config}'
+az login --identity
+az group delete --name '{resource_group.name}' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
+EOF
+"""
+                        },
                     },
                     mode=models.DeploymentMode.COMPLETE,
                 )

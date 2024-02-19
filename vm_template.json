@@ -2,6 +2,9 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
+        "cloud_init": {
+            "type": "string"
+        },
         "delete_vm_custom_role_id": {
             "type": "string"
         }
@@ -131,6 +134,7 @@
                 "osProfile": {
                     "computerName": "runner",
                     "adminUsername": "runner",
+                    "customData": "[base64(parameters('cloud_init'))]",
                     "linuxConfiguration": {
                         "disablePasswordAuthentication": true,
                         "ssh": {
