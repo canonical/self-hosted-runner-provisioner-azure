@@ -241,6 +241,7 @@ python3 -m pipx ensurepath
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 EOF
 ln -s /usr/bin/python3 /usr/bin/python
+# Separate runuser to update path
 runuser runner --login << 'EOF'
 set -e
 pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
@@ -341,21 +342,13 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
     ):
         logging.info("Invalid client principal audience")
         return unauthenticated
-    for _ in range(15):
-        response_ = requests.get(
-            f'https://{os.environ["WEBSITE_HOSTNAME"]}/.auth/me',
-            headers={"X-ZUMO-AUTH": request.headers["x-zumo-auth"]},
-        )
-        response_.raise_for_status()
-        data = response_.json()
-        if isinstance(data, list) and len(data) == 1:
-            break
-        elif isinstance(data, list) and len(data) > 1:
-            raise ValueError("len(data) > 1")
-        # Workaround for `/.auth/me` sometimes returning no data
-        time.sleep(1)
-        logging.info("Retrying /.auth/me")
-    else:
+    response_ = requests.get(
+        f'https://{os.environ["WEBSITE_HOSTNAME"]}/.auth/me',
+        headers={"X-ZUMO-AUTH": request.headers["x-zumo-auth"]},
+    )
+    response_.raise_for_status()
+    data = response_.json()
+    if not (isinstance(data, list) and len(data) == 1):
         raise ValueError("len(data) != 1. Potential issue with token store")
     claims = data[0]["user_claims"]
     required_claims = {
