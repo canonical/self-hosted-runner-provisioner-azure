@@ -394,21 +394,26 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         return unauthenticated
 
     client = get_client()
-    resources = client.resources.list(
-        filter=f"identity/principalId eq '{vm_managed_identity_object_id}' and resourceType eq 'Microsoft.Compute/virtualMachines'"
-    )
-    iterator = iter(resources)
-    try:
-        resource = next(iterator)
-    except StopIteration:
+    for _ in range(10):
+        resources = client.resources.list(
+            filter=f"identity/principalId eq '{vm_managed_identity_object_id}' and resourceType eq 'Microsoft.Compute/virtualMachines'"
+        )
+        iterator = iter(resources)
+        try:
+            resource = next(iterator)
+        except StopIteration:
+            logging.info("No VMs found with ID. Retrying")
+            time.sleep(1)
+            continue
+        try:
+            next(iterator)
+        except StopIteration:
+            break
+        else:
+            raise ValueError("Multiple VMs found with ID")
+    else:
         logging.info("No VMs found with ID")
         return unauthenticated
-    try:
-        next(iterator)
-    except StopIteration:
-        pass
-    else:
-        raise ValueError("Multiple VMs found with ID")
     # Example: "/subscriptions/9b6fef27-c342-4e4d-b649-e94a7a9a4588/resourceGroups/runner-job21601933747/providers/Microsoft.Compute/virtualMachines/runner"
     id: str = resource.id
     prefix = f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resourceGroups/'
