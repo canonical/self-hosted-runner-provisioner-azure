@@ -8,7 +8,12 @@ packages = [{include = "azure_runner_provisioner_cli"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+azure-identity = "^1.15.0"
+requests = "^2.31.0"
 
+[tool.poetry.scripts]
+tag-resource-group = "azure_runner_provisioner_cli.tag_resource_group:main"
+set-up-pre-job-script = "azure_runner_provisioner_cli.set_up_pre_job_script:main"
 
 [build-system]
 requires = ["poetry-core"]
