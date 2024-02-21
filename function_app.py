@@ -1,6 +1,7 @@
 import base64
 import datetime
 import enum
+import hashlib
 import json
 import logging
 import os
@@ -9,8 +10,10 @@ import time
 import azure.core.exceptions
 import azure.functions as func
 import azure.identity
+import azure.keyvault.keys.crypto as crypto
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
+import jwt
 import requests
 
 REGION = "eastus2"
@@ -103,24 +106,83 @@ def response(body: str = None, *, status_code: int):
     return func.HttpResponse(body, status_code=status_code)
 
 
+class AzureKey(jwt.AbstractJWKBase):
+    """Azure Key Vault key"""
+
+    def __init__(self, client: crypto.CryptographyClient) -> None:
+        self._client = client
+
+    def get_kty(self) -> str:
+        return "RSA"
+
+    def get_kid(self) -> str:
+        raise NotImplementedError
+
+    def is_sign_key(self) -> bool:
+        return True
+
+    def sign(self, message: bytes, **options) -> bytes:
+        return self._client.sign(
+            crypto.SignatureAlgorithm.rs256, hashlib.sha256(message).digest()
+        ).signature
+
+    def verify(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def to_dict(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @classmethod
+    def from_dict(cls, *args, **kwargs):
+        raise NotImplementedError
+
+
 def provision_vm(
     *,
     client: azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient,
     job_id,
     request: func.HttpRequest,
+    app_installation_id: int,
 ) -> func.HttpResponse:
     provisioned_runners = list(
         client.resource_groups.list(filter=f"tagName eq 'runner'")
     )
     if len(provisioned_runners) >= CONCURRENT_RUNNER_LIMIT:
         return response("Concurrent runner limit exceeded", status_code=290)
+    # Authenticate as GitHub App installation
+    # (https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)
+    payload = {
+        # Issued at time
+        "iat": int(time.time()),
+        # JWT expiration time (10 minutes maximum)
+        "exp": int(time.time()) + 60,
+        # GitHub App's identifier
+        "iss": int(os.environ["GITHUB_APP_ID"]),
+    }
+    key = AzureKey(
+        crypto.CryptographyClient(
+            f'{os.environ["KEY_VAULT_URI"]}keys/github-app',
+            azure.identity.EnvironmentCredential(),
+        )
+    )
+    github_jwt = jwt.JWT().encode(payload, key, alg="RS256")
+    response_ = requests.post(
+        f"https://api.github.com/app/installations/{app_installation_id}/access_tokens",
+        json={"permissions": {"organization_self_hosted_runners": "write"}},
+        headers={
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Bearer {github_jwt}",
+        },
+    )
+    response_.raise_for_status()
+    token = response_.json()["token"]
     response_ = requests.get(
         "https://api.github.com/orgs/canonical-test2/actions/runners/downloads",
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            # TODO: use GitHub App & Azure Key Vault instead of PAT
-            "Authorization": f'Bearer {os.environ["GITHUB_PAT"]}',
+            "Authorization": f"Bearer {token}",
         },
     )
     response_.raise_for_status()
@@ -138,8 +200,7 @@ def provision_vm(
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            # TODO: use GitHub App & Azure Key Vault instead of PAT
-            "Authorization": f'Bearer {os.environ["GITHUB_PAT"]}',
+            "Authorization": f"Bearer {token}",
         },
         json={
             "name": resource_group_name,
@@ -271,7 +332,12 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     job_id = body["workflow_job"]["id"]
     client = get_client()
     if action == Action.QUEUED:
-        return provision_vm(client=client, job_id=job_id, request=request)
+        return provision_vm(
+            client=client,
+            job_id=job_id,
+            request=request,
+            app_installation_id=body["installation"]["id"],
+        )
     elif action == Action.COMPLETED:
         # Delete resource group
         resource_groups = list(
