@@ -2,6 +2,7 @@ import base64
 import datetime
 import enum
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -309,7 +310,21 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     Triggered on `workflow_job` webhook
     https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
     """
-    # TODO: validate https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+    # Validate webhook signature
+    # (https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries#python-example)
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not signature:
+        return response("X-Hub-Signature-256 missing", status_code=401)
+    expected_signature = (
+        "sha256="
+        + hmac.new(
+            key=os.environ["GITHUB_WEBHOOK_SECRET"].encode("utf-8"),
+            msg=request.get_body(),
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+    )
+    if not hmac.compare_digest(signature, expected_signature):
+        return response("Signature does not match", status_code=401)
     if request.headers.get("X-GitHub-Event") != "workflow_job":
         return response("Invalid GitHub event", status_code=400)
     try:
