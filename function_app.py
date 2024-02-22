@@ -26,6 +26,11 @@ GITHUB_ORGANIZATION = "canonical-test2"
 # provisioned to catch up with the jobs that were skipped.)
 CONCURRENT_RUNNER_LIMIT = 50
 
+# Set root logging level to WARNING (used by our Python package dependencies)
+logging.getLogger().setLevel(logging.WARNING)
+# Create INFO level logger for our logs
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 app = func.FunctionApp()
 
 
@@ -97,11 +102,11 @@ def cleanup(timer: func.TimerRequest) -> None:
                     # Resource group deletion might have started in an earlier execution
                     # (It is possible that the resource group, while in deletion, existed during
                     # `resource_groups.list()` but does not exist now.)
-                    logging.info(
+                    logger.info(
                         f"{resource_group.name=} already deleted. {past_long_timeout=}"
                     )
                 else:
-                    logging.info(
+                    logger.info(
                         f"Deleted {resource_group.name=}. {past_long_timeout=}"
                     )
     finally:
@@ -113,7 +118,7 @@ def cleanup(timer: func.TimerRequest) -> None:
 
 
 def response(body: str = None, *, status_code: int):
-    logging.info(f"Response {status_code=} {body=}")
+    logger.info(f"Response {status_code=} {body=}")
     return func.HttpResponse(body, status_code=status_code)
 
 
@@ -248,7 +253,7 @@ def provision_vm(
             },
         ),
     )
-    logging.info(f"Created {resource_group.name=}")
+    logger.info(f"Created {resource_group.name=}")
     with open("vm_template.json", "r") as file:
         template = json.load(file)
     client.deployments.begin_create_or_update(
@@ -295,7 +300,7 @@ EOF
             )
         ),
     )
-    logging.info("Created virtual machine")
+    logger.info("Created virtual machine")
     return response("Runner provisioned", status_code=200)
 
 
@@ -441,7 +446,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
     try:
         client_principal = request.headers["x-ms-client-principal"]
     except KeyError as exception:
-        logging.info(str(exception))
+        logger.info(str(exception))
         return unauthenticated
     cp_claims = json.loads(base64.b64decode(client_principal).decode())["claims"]
     cp_audience = [claim["val"] for claim in cp_claims if claim["typ"] == "aud"]
@@ -449,7 +454,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         len(cp_audience) != 1
         or cp_audience[0] != f'https://{os.environ["WEBSITE_HOSTNAME"]}/'
     ):
-        logging.info("Invalid client principal audience")
+        logger.info("Invalid client principal audience")
         return unauthenticated
     response_ = requests.get(
         f'https://{os.environ["WEBSITE_HOSTNAME"]}/.auth/me',
@@ -475,31 +480,31 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
             else:
                 raise ValueError("Multiple claims of same type")
     if required_claims["aud"] != f'api://{os.environ["WEBSITE_AUTH_CLIENT_ID"]}':
-        logging.info("Invalid audience")
+        logger.info("Invalid audience")
         return unauthenticated
     if (
         required_claims["iss"]
         != f'https://sts.windows.net/{os.environ["AZURE_TENANT_ID"]}/'
     ):
-        logging.info("Invalid issuer")
+        logger.info("Invalid issuer")
         return unauthenticated
     if (
         required_claims["http://schemas.microsoft.com/identity/claims/identityprovider"]
         != f'https://sts.windows.net/{os.environ["AZURE_TENANT_ID"]}/'
     ):
-        logging.info("Invalid identity provider")
+        logger.info("Invalid identity provider")
         return unauthenticated
     if (
         required_claims["http://schemas.microsoft.com/identity/claims/tenantid"]
         != os.environ["AZURE_TENANT_ID"]
     ):
-        logging.info("Invalid tenant ID")
+        logger.info("Invalid tenant ID")
         return unauthenticated
     vm_managed_identity_object_id = required_claims[
         "http://schemas.microsoft.com/identity/claims/objectidentifier"
     ]
     if not vm_managed_identity_object_id:
-        logging.info("Missing VM ID")
+        logger.info("Missing VM ID")
         return unauthenticated
 
     client = get_client()
@@ -513,7 +518,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         try:
             resource = next(iterator)
         except StopIteration:
-            logging.info("No VMs found with ID. Retrying")
+            logger.info("No VMs found with ID. Retrying")
             time.sleep(1)
             continue
         try:
@@ -523,7 +528,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         else:
             raise ValueError("Multiple VMs found with ID")
     else:
-        logging.info("No VMs found with ID")
+        logger.info("No VMs found with ID")
         return unauthenticated
     # Example: "/subscriptions/9b6fef27-c342-4e4d-b649-e94a7a9a4588/resourceGroups/runner-job21601933747/providers/Microsoft.Compute/virtualMachines/runner"
     id: str = resource.id
@@ -538,7 +543,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
     resource_group = client.resource_groups.get(resource_group_name)
     tags = resource_group.tags or {}
     if "runner" not in tags:
-        logging.info("runner tag missing")
+        logger.info("runner tag missing")
         return unauthenticated
     if "job" in tags:
         return response("job tag already added", status_code=403)
