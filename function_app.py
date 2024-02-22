@@ -72,35 +72,44 @@ def cleanup(timer: func.TimerRequest) -> None:
         "key": "createdTime",
         "type": "iso-8601",
     }
-    client = get_client()
-    now = datetime.datetime.now(datetime.timezone.utc)
-    for resource_group in client.resource_groups.list(
-        filter="tagName eq 'runner'",
-        # Needed to include `createdTime` in HTTP response from Azure API
-        # Undocumented API feature (https://stackoverflow.com/a/58830232)
-        params={"$expand": "createdTime"},
-    ):
-        delta = now - resource_group.created_time
-        past_long_timeout = delta > datetime.timedelta(hours=3, minutes=10)
-        if past_long_timeout or (
-            # Delete VMs that haven't started a job
-            "job" not in (resource_group.tags or {})
-            and delta > datetime.timedelta(minutes=10)
+    try:
+        client = get_client()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for resource_group in client.resource_groups.list(
+            filter="tagName eq 'runner'",
+            # Needed to include `createdTime` in HTTP response from Azure API
+            # Undocumented API feature (https://stackoverflow.com/a/58830232)
+            params={"$expand": "createdTime"},
         ):
-            try:
-                client.resource_groups.begin_delete(
-                    resource_group.name,
-                    force_deletion_types="Microsoft.Compute/virtualMachines",
-                )
-            except azure.core.exceptions.ResourceNotFoundError:
-                # Resource group deletion might have started in an earlier execution
-                # (It is possible that the resource group, while in deletion, existed during
-                # `resource_groups.list()` but does not exist now.)
-                logging.info(
-                    f"{resource_group.name=} already deleted. {past_long_timeout=}"
-                )
-            else:
-                logging.info(f"Deleted {resource_group.name=}. {past_long_timeout=}")
+            delta = now - resource_group.created_time
+            past_long_timeout = delta > datetime.timedelta(hours=3, minutes=10)
+            if past_long_timeout or (
+                # Delete VMs that haven't started a job
+                "job" not in (resource_group.tags or {})
+                and delta > datetime.timedelta(minutes=10)
+            ):
+                try:
+                    client.resource_groups.begin_delete(
+                        resource_group.name,
+                        force_deletion_types="Microsoft.Compute/virtualMachines",
+                    )
+                except azure.core.exceptions.ResourceNotFoundError:
+                    # Resource group deletion might have started in an earlier execution
+                    # (It is possible that the resource group, while in deletion, existed during
+                    # `resource_groups.list()` but does not exist now.)
+                    logging.info(
+                        f"{resource_group.name=} already deleted. {past_long_timeout=}"
+                    )
+                else:
+                    logging.info(
+                        f"Deleted {resource_group.name=}. {past_long_timeout=}"
+                    )
+    finally:
+        # Undo patch
+        # (Azure Functions seems to sometimes re-use Python processes.
+        # Without this, sometimes the `job()` function fails to create a resource group.)
+        models.ResourceGroup._validation.pop("created_time")
+        models.ResourceGroup._attribute_map.pop("created_time")
 
 
 def response(body: str = None, *, status_code: int):
