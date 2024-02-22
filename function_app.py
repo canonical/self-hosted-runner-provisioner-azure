@@ -19,6 +19,7 @@ import requests
 
 REGION = "eastus2"
 RUNNER_GROUP_ID = 1
+GITHUB_ORGANIZATION = "canonical-test2"
 # This limit should not be exceeded during normal usage
 # If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
 # provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
@@ -108,7 +109,11 @@ def response(body: str = None, *, status_code: int):
 
 
 class AzureKey(jwt.AbstractJWKBase):
-    """Azure Key Vault key"""
+    """Azure Key Vault key
+
+    Use Azure Key Vault for signing (this script never has access to private key; private key never
+    leaves Azure Key Vault)
+    """
 
     def __init__(self, client: crypto.CryptographyClient) -> None:
         self._client = client
@@ -141,7 +146,6 @@ class AzureKey(jwt.AbstractJWKBase):
 def provision_vm(
     *,
     client: azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient,
-    job_id,
     request: func.HttpRequest,
     app_installation_id: int,
 ) -> func.HttpResponse:
@@ -178,8 +182,12 @@ def provision_vm(
     )
     response_.raise_for_status()
     token = response_.json()["token"]
+    # Get latest available runner version for GitHub organization
+    # "Note: Actions Runner follows a progressive release policy, so the latest release might not
+    # be available to your enterprise, organization, or repository yet."
+    # (from https://github.com/actions/runner/releases release notes)
     response_ = requests.get(
-        "https://api.github.com/orgs/canonical-test2/actions/runners/downloads",
+        f"https://api.github.com/orgs/{GITHUB_ORGANIZATION}/actions/runners/downloads",
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -197,7 +205,7 @@ def provision_vm(
     download = downloads[0]
     resource_group_name = f'test-runner-{request.headers["X-GitHub-Delivery"]}'
     response_ = requests.post(
-        "https://api.github.com/orgs/canonical-test2/actions/runners/generate-jitconfig",
+        f"https://api.github.com/orgs/{GITHUB_ORGANIZATION}/actions/runners/generate-jitconfig",
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -236,7 +244,7 @@ def provision_vm(
         template = json.load(file)
     client.deployments.begin_create_or_update(
         resource_group.name,
-        f"test-deployment-job{job_id}",
+        f"test-deployment-{resource_group_name}",
         models.Deployment(
             properties=models.DeploymentProperties(
                 template=template,
@@ -245,6 +253,8 @@ def provision_vm(
                         "value": os.environ["DELETE_VM_CUSTOM_ROLE_ID"]
                     },
                     "cloud_init": {
+                        # TODO future improvement: use Jinja template
+                        # TODO future improvement: install azure cli without "sudo bash" downloaded script
                         "value": f"""#!/bin/bash
 apt-get update
 apt-get install python3-pip python3-venv -y
@@ -345,17 +355,16 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     ):
         if required_label not in labels:
             return no_operation(f"{required_label=} missing from {labels=}")
-    job_id = body["workflow_job"]["id"]
     client = get_client()
     if action == Action.QUEUED:
         return provision_vm(
             client=client,
-            job_id=job_id,
             request=request,
             app_installation_id=body["installation"]["id"],
         )
     elif action == Action.COMPLETED:
         # Delete resource group
+        job_id = body["workflow_job"]["id"]
         resource_groups = list(
             client.resource_groups.list(
                 filter=f"tagName eq 'job' and tagValue eq '{job_id}'"
@@ -485,6 +494,8 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         return unauthenticated
 
     client = get_client()
+    # TODO future improvement: pass VM name/identifier from VM & get that VM directly instead of
+    # listing VMs. (maybe will reduce latency & remove need for retry)
     for _ in range(10):
         resources = client.resources.list(
             filter=f"identity/principalId eq '{vm_managed_identity_object_id}' and resourceType eq 'Microsoft.Compute/virtualMachines'"

@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--website-auth-client-id", required=True)
     parser.add_argument("--website-hostname", required=True)
     args = parser.parse_args()
+    # Read job name from runner logs
     paths = list(
         pathlib.Path("~/actions-runner/_diag").expanduser().glob("Runner_*.log")
     )
@@ -50,12 +51,14 @@ def main():
     assert match
     # Example: "foo (1)"
     job_name = match.group(1)
+    # Get job ID from GitHub API
     for job in get_jobs():
         if job["name"] == job_name:
             job_id = job["id"]
             break
     else:
         raise ValueError("Unable to find job ID")
+    # Call `tag()` in `function_app.py`
     token1 = (
         azure.identity.ManagedIdentityCredential()
         .get_token(f"api://{args.website_auth_client_id}")

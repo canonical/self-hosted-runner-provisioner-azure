@@ -4,6 +4,10 @@ import stat
 
 
 def main():
+    """Set up pre-job script to tag VM with job ID
+
+    https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/running-scripts-before-or-after-a-job
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--website-auth-client-id", required=True)
     parser.add_argument("--website-hostname", required=True)
