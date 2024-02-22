@@ -106,9 +106,7 @@ def cleanup(timer: func.TimerRequest) -> None:
                         f"{resource_group.name=} already deleted. {past_long_timeout=}"
                     )
                 else:
-                    logger.info(
-                        f"Deleted {resource_group.name=}. {past_long_timeout=}"
-                    )
+                    logger.info(f"Deleted {resource_group.name=}. {past_long_timeout=}")
     finally:
         # Undo patch
         # (Azure Functions seems to sometimes re-use Python processes.
@@ -355,6 +353,9 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         body = request.get_json()
     except ValueError:
         return response("No valid JSON data", status_code=400)
+    if body.get("organization", {"login": None})["login"] != GITHUB_ORGANIZATION:
+        logging.info("Unauthorized organization")
+        return response(status_code=403)
     try:
         action = Action(body["action"])
     except ValueError as exception:
