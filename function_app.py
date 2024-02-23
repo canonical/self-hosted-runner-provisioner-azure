@@ -294,7 +294,7 @@ then
     runuser runner --login << 'EOF'
     set -e
     pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
-    set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group_name}'
+    set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group.name}'
     cd actions-runner
     curl -o actions-runner.tar.gz -L '{download["download_url"]}'
     echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
