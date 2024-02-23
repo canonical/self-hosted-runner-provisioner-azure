@@ -215,7 +215,7 @@ def provision_vm(
     if len(downloads) != 1:
         raise ValueError("len(downloads) != 1")
     download = downloads[0]
-    resource_group_name = f'test-runner-{request.headers["X-GitHub-Delivery"]}'
+    resource_group_name = f'runner-{request.headers["X-GitHub-Delivery"]}'
     response_ = requests.post(
         f"https://api.github.com/orgs/{GITHUB_ORGANIZATION}/actions/runners/generate-jitconfig",
         headers={
@@ -256,7 +256,7 @@ def provision_vm(
         template = json.load(file)
     client.deployments.begin_create_or_update(
         resource_group.name,
-        f"test-deployment-{resource_group_name}",
+        f"deployment-{resource_group_name}",
         models.Deployment(
             properties=models.DeploymentProperties(
                 template=template,
