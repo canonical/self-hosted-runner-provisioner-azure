@@ -38,6 +38,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--website-auth-client-id", required=True)
     parser.add_argument("--website-hostname", required=True)
+    parser.add_argument("--resource-group", required=True)
     args = parser.parse_args()
     # Read job name from runner logs
     paths = list(
@@ -73,6 +74,6 @@ def main():
     response = requests.post(
         f"https://{args.website_hostname}/api/tag",
         headers={"X-ZUMO-AUTH": token2},
-        json={"job_id": job_id},
+        json={"job_id": job_id, "resource_group": args.resource_group},
     )
     response.raise_for_status()

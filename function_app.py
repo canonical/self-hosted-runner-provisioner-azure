@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import string
 import time
 
 import azure.core.exceptions
@@ -281,7 +282,7 @@ ln -s /usr/bin/python3 /usr/bin/python
 runuser runner --login << 'EOF'
 set -e
 pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
-set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}'
+set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group_name}'
 cd actions-runner
 curl -o actions-runner.tar.gz -L '{download["download_url"]}'
 echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
@@ -356,7 +357,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     except ValueError:
         return response("No valid JSON data", status_code=400)
     if body.get("organization", {"login": None})["login"] != GITHUB_ORGANIZATION:
-        logging.info("Unauthorized organization")
+        logger.info("Unauthorized organization")
         return response(status_code=403)
     try:
         action = Action(body["action"])
@@ -510,51 +511,41 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         logger.info("Missing VM ID")
         return unauthenticated
 
+    request_data = request.get_json()
+    try:
+        resource_group_name = request_data["resource_group"]
+        if not isinstance(resource_group_name, str):
+            raise ValueError
+        valid_characters = string.ascii_letters + string.digits + "-"
+        for character in resource_group_name:
+            if character not in valid_characters:
+                raise ValueError
+    except (KeyError, ValueError):
+        return response("Invalid resource group name", status_code=400)
     client = get_client()
-    # TODO future improvement: pass VM name/identifier from VM & get that VM directly instead of
-    # listing VMs. (maybe will reduce latency & remove need for retry)
-    for _ in range(10):
-        resources = client.resources.list(
-            filter=f"identity/principalId eq '{vm_managed_identity_object_id}' and resourceType eq 'Microsoft.Compute/virtualMachines'"
+    try:
+        vm = client.resources.get_by_id(
+            f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resourceGroups/{resource_group_name}/providers/Microsoft.Compute/virtualMachines/runner',
+            api_version="2021-04-01",
         )
-        iterator = iter(resources)
-        try:
-            resource = next(iterator)
-        except StopIteration:
-            logger.info("No VMs found with ID. Retrying")
-            time.sleep(1)
-            continue
-        try:
-            next(iterator)
-        except StopIteration:
-            break
-        else:
-            raise ValueError("Multiple VMs found with ID")
-    else:
-        logger.info("No VMs found with ID")
-        return unauthenticated
-    # Example: "/subscriptions/9b6fef27-c342-4e4d-b649-e94a7a9a4588/resourceGroups/runner-job21601933747/providers/Microsoft.Compute/virtualMachines/runner"
-    id: str = resource.id
-    prefix = f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/resourceGroups/'
-    if not id.startswith(prefix):
-        raise ValueError("Unrecognized resource ID format")
-    id = id.removeprefix(prefix)
-    if "/" not in id:
-        raise ValueError("Unrecognized resource ID format")
-    resource_group_name = id.split("/")[0]
-
+    except azure.core.exceptions.ResourceNotFoundError:
+        logger.info("VM not found for resource group")
+        return response("VM not found for managed identity", status_code=403)
+    if vm.identity.principal_id != vm_managed_identity_object_id:
+        logger.info("VM ID does not match")
+        return response("VM not found for managed identity", status_code=403)
     resource_group = client.resource_groups.get(resource_group_name)
     tags = resource_group.tags or {}
     if "runner" not in tags:
         logger.info("runner tag missing")
-        return unauthenticated
+        return response("VM not found for managed identity", status_code=403)
     if "job" in tags:
         return response("job tag already added", status_code=403)
     try:
-        job_id = request.get_json()["job_id"]
+        job_id = request_data["job_id"]
         if not isinstance(job_id, int):
             raise ValueError
-    except (ValueError, KeyError):
+    except (KeyError, ValueError):
         return response("Invalid job id", status_code=400)
     client.tags.begin_update_at_scope(
         resource_group.id,

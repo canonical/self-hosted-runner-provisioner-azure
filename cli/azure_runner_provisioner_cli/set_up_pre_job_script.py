@@ -11,11 +11,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--website-auth-client-id", required=True)
     parser.add_argument("--website-hostname", required=True)
+    parser.add_argument("--resource-group", required=True)
     args = parser.parse_args()
     script = pathlib.Path("~/tag_resource_group.sh").expanduser()
     script.write_text(
         f"""#!/bin/bash
-tag-resource-group --website-auth-client-id '{args.website_auth_client_id}' --website-hostname '{args.website_hostname}'
+tag-resource-group --website-auth-client-id '{args.website_auth_client_id}' --website-hostname '{args.website_hostname}' --resource-group '{args.resource_group}'
 """,
         encoding="utf-8",
     )
