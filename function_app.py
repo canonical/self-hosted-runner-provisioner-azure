@@ -21,7 +21,7 @@ import requests
 
 REGION = "eastus2"
 RUNNER_GROUP_ID = 1
-GITHUB_ORGANIZATION = "canonical-test2"
+GITHUB_ORGANIZATION = "canonical-test4"
 # This limit should not be exceeded during normal usage
 # If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
 # provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
