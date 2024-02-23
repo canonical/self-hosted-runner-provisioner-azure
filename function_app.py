@@ -15,6 +15,7 @@ import azure.identity
 import azure.keyvault.keys.crypto as crypto
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
+import jinja2
 import jwt
 import requests
 
@@ -254,62 +255,32 @@ def provision_vm(
     )
     logger.info(f"Created {resource_group.name=}")
     with open("vm_template.json", "r") as file:
-        template = json.load(file)
+        vm_template = json.load(file)
+    with open("cloud_init.sh.jinja", "r") as file:
+        cloud_init_template = file.read()
     client.deployments.begin_create_or_update(
         resource_group.name,
         f"deployment-{resource_group_name}",
         models.Deployment(
             properties=models.DeploymentProperties(
-                template=template,
+                template=vm_template,
                 parameters={
                     "delete_vm_custom_role_id": {
                         "value": os.environ["DELETE_VM_CUSTOM_ROLE_ID"]
                     },
                     "cloud_init": {
-                        # TODO future improvement: use Jinja template
-                        "value": f"""#!/bin/bash
-set +e
-runuser runner --login << 'EOF'
-set -e
-sudo apt-get update
-# Install Azure CLI
-# (https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt#option-2-step-by-step-installation-instructions)
-sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg -y
-sudo mkdir -p /etc/apt/keyrings
-curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
-sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
-AZ_DIST=$(lsb_release -cs)
-echo "deb [arch=`dpkg --print-architecture` signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
-sudo apt-get update
-sudo apt-get install azure-cli -y
-
-sudo apt-get install python3-pip python3-venv -y
-python3 -m pip install pipx
-python3 -m pipx ensurepath
-sudo ln -s /usr/bin/python3 /usr/bin/python
-EOF
-if [[ $? == 0 ]]
-then
-    # Separate runuser to update path
-    runuser runner --login << 'EOF'
-    set -e
-    pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
-    set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group.name}'
-    cd actions-runner
-    curl -o actions-runner.tar.gz -L '{download["download_url"]}'
-    echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
-    tar xzf ./actions-runner.tar.gz
-    ./run.sh --jitconfig '{jit_config}'
-EOF
-fi
-# Delete VM regardless if previous commands fail
-runuser runner --login << 'EOF'
-set +e
-az login --identity
-az group delete --name '{resource_group.name}' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
-sudo shutdown now
-EOF
-"""
+                        "value": jinja2.Template(
+                            cloud_init_template,
+                            autoescape=False,
+                            undefined=jinja2.StrictUndefined,
+                        ).render(
+                            website_auth_client_id=os.environ["WEBSITE_AUTH_CLIENT_ID"],
+                            website_hostname=os.environ["WEBSITE_HOSTNAME"],
+                            resource_group_name=resource_group.name,
+                            runner_download_url=download["download_url"],
+                            runner_download_checksum=download["sha256_checksum"],
+                            jit_config=jit_config,
+                        ),
                     },
                 },
                 mode=models.DeploymentMode.COMPLETE,

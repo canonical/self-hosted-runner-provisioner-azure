@@ -1,0 +1,42 @@
+#!/bin/bash
+set +e
+runuser runner --login << 'EOF'
+set -e
+sudo apt-get update
+# Install Azure CLI
+# (https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt#option-2-step-by-step-installation-instructions)
+sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg -y
+sudo mkdir -p /etc/apt/keyrings
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
+AZ_DIST=$(lsb_release -cs)
+echo "deb [arch=`dpkg --print-architecture` signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
+sudo apt-get update
+sudo apt-get install azure-cli -y
+
+sudo apt-get install python3-pip python3-venv -y
+python3 -m pip install pipx
+python3 -m pipx ensurepath
+sudo ln -s /usr/bin/python3 /usr/bin/python
+EOF
+if [[ $? == 0 ]]
+then
+    # Separate runuser to update path
+    runuser runner --login << 'EOF'
+    set -e
+    pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
+    set-up-pre-job-script --website-auth-client-id '{{ website_auth_client_id }}' --website-hostname '{{ website_hostname }}' --resource-group '{{ resource_group_name }}'
+    cd actions-runner
+    curl -o actions-runner.tar.gz -L '{{ runner_download_url }}'
+    echo '{{ runner_download_checksum }}  actions-runner.tar.gz' | shasum -a 256 -c
+    tar xzf ./actions-runner.tar.gz
+    ./run.sh --jitconfig '{{ jit_config }}'
+EOF
+fi
+# Delete VM regardless if previous commands fail
+runuser runner --login << 'EOF'
+set +e
+az login --identity
+az group delete --name '{{ resource_group_name }}' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
+sudo shutdown now
+EOF
