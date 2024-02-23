@@ -26,7 +26,7 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Region: East US 2
 1. Create Storage account
     - Resource group: `runner-provisioner`
-    - Name: `runnerprovisionertokenstorage`
+    - Name: `runnerprovisionertoken`
     - Redundancy: Locally-redundant storage
     - Data Protection: Disable all soft delete options
 1. Storage account -> Containers -> Create
@@ -60,6 +60,7 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Add permission: `Microsoft.KeyVault/vaults/keys/sign/action`
 1. Subscription -> Access control -> Add custom role
     - Name: `Runner provisioner`
+    - Start from scratch
     - Add permissions:
         ```
         Microsoft.Resources/subscriptions/resourceGroups/read
@@ -84,13 +85,13 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
         ```
 1. Microsoft Entra ID -> App registrations -> New registration
     - Name: `self-hosted-github-runner-provisioner`
-    - New client secret
-        - Name: `Runner provisioner`
+    - Certificates & secrets -> New client secret
+        - Description: `Runner provisioner`
         - Expires: 730 days **(set reminder)**
         - Copy value
     - Paste client secret into Function App configuration `AZURE_CLIENT_SECRET`
     - Go to overview, copy client ID & paste into Function App configuration `AZURE_CLIENT_ID`
-    - Copy tenant ID & paste into Function App configuration `AZURE_CLIENT_ID`
+    - Copy tenant ID & paste into Function App configuration `AZURE_TENANT_ID`
 1. Subscription
     - Copy ID & paste into Function App configuration `AZURE_SUBSCRIPTION_ID`
 1. Subscription -> Access control -> Add role assignment
@@ -120,6 +121,7 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
 1. Edit identity provider
     - Remove `/v2.0` from end of issuer URL
     - Tenant requirement: Allow requests from specific tenants
+        - Copy `AZURE_TENANT_ID` from Function App configuration
 1. Key Vault
     - Copy vault URI and paste into Function App configuration `KEY_VAULT_URI`
 1. Key Vault -> Access control -> Add role assignment
@@ -130,20 +132,27 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Members: You
 1. Generate throwaway SSH key
     - (Required by Azure to disable password authentication)
-    - ` ssh-keygen -t rsa -b 4096`
+    - `ssh-keygen -t rsa -b 4096`
     - Paste public key into [vm_template.json](vm_template.json)
     - Securely delete private key
-1. Follow [GitHub instructions below](#github)
+1. Follow step 1 in [GitHub instructions below](#github)
 1. Deploy Function App
     - Clone this repository
     - Open repository in VS Code
     - Deploy to Azure: https://learn.microsoft.com/en-us/azure/azure-functions/create-first-function-vs-code-python?pivots=python-mode-decorators#deploy-the-project-to-azure
+1. Subscription -> Resource providers
+    - (https://learn.microsoft.com/en-us/azure/azure-resource-manager/troubleshooting/error-register-resource-provider?tabs=azure-portal#solution)
+    - Register:
+        ```
+        Microsoft.Network
+        Microsoft.Compute
+        ```
 
 ### GitHub
 1. (Optional) Create runner group: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/managing-access-to-self-hosted-runners-using-groups#creating-a-self-hosted-runner-group-for-an-organization. Change `RUNNER_GROUP_ID` in [function_app.py](function_app.py)
 1. Register GitHub App under organization (https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
     - Name: `Self-hosted runner provisioner`
-    - Webhook URL: Go to Azure -> Function App -> Job -> Get function URL -> default (function key)
+    - Webhook URL: Go to Azure -> Function App -> `job` -> Get function URL -> default (function key)
     - Webhook secret:
         - Run
             ```python
