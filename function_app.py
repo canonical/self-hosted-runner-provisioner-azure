@@ -267,32 +267,45 @@ def provision_vm(
                     },
                     "cloud_init": {
                         # TODO future improvement: use Jinja template
-                        # TODO future improvement: install azure cli without "sudo bash" downloaded script
                         "value": f"""#!/bin/bash
-apt-get update
-apt-get install python3-pip python3-venv -y
 runuser runner --login << 'EOF'
 set -e
+sudo apt-get update
+sudo apt-get install python3-pip python3-venv -y
 python3 -m pip install pipx
 python3 -m pipx ensurepath
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+sudo ln -s /usr/bin/python3 /usr/bin/python
+# Install Azure CLI
+# (https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt#option-2-step-by-step-installation-instructions)
+sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg -y
+sudo mkdir -p /etc/apt/keyrings
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/microsoft.gpg
+AZ_DIST=$(lsb_release -cs)
+echo "deb [arch=`dpkg --print-architecture` signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
+sudo apt-get update
+sudo apt-get install azure-cli -y
 EOF
-ln -s /usr/bin/python3 /usr/bin/python
-# Separate runuser to update path
-runuser runner --login << 'EOF'
-set -e
-pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
-set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group_name}'
-cd actions-runner
-curl -o actions-runner.tar.gz -L '{download["download_url"]}'
-echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
-tar xzf ./actions-runner.tar.gz
-./run.sh --jitconfig '{jit_config}'
+if [[ $? == 0 ]]
+then
+    # Separate runuser to update path
+    runuser runner --login << 'EOF'
+    set -e
+    pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
+    set-up-pre-job-script --website-auth-client-id '{os.environ["WEBSITE_AUTH_CLIENT_ID"]}' --website-hostname '{os.environ["WEBSITE_HOSTNAME"]}' --resource-group '{resource_group_name}'
+    cd actions-runner
+    curl -o actions-runner.tar.gz -L '{download["download_url"]}'
+    echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
+    tar xzf ./actions-runner.tar.gz
+    ./run.sh --jitconfig '{jit_config}'
 EOF
-# Separate runuser to delete VM regardless if previous commands fail
+fi
+# Delete VM regardless if previous commands fail
 runuser runner --login << 'EOF'
+set +e
 az login --identity
 az group delete --name '{resource_group.name}' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
+sudo shutdown now
 EOF
 """
                     },
