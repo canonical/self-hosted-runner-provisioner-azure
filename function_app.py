@@ -268,13 +268,10 @@ def provision_vm(
                     "cloud_init": {
                         # TODO future improvement: use Jinja template
                         "value": f"""#!/bin/bash
+set +e
 runuser runner --login << 'EOF'
 set -e
 sudo apt-get update
-sudo apt-get install python3-pip python3-venv -y
-python3 -m pip install pipx
-python3 -m pipx ensurepath
-sudo ln -s /usr/bin/python3 /usr/bin/python
 # Install Azure CLI
 # (https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux?pivots=apt#option-2-step-by-step-installation-instructions)
 sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg -y
@@ -285,6 +282,11 @@ AZ_DIST=$(lsb_release -cs)
 echo "deb [arch=`dpkg --print-architecture` signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | sudo tee /etc/apt/sources.list.d/azure-cli.list
 sudo apt-get update
 sudo apt-get install azure-cli -y
+
+sudo apt-get install python3-pip python3-venv -y
+python3 -m pip install pipx
+python3 -m pipx ensurepath
+sudo ln -s /usr/bin/python3 /usr/bin/python
 EOF
 if [[ $? == 0 ]]
 then
