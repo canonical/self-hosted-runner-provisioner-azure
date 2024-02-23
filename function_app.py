@@ -286,8 +286,10 @@ cd actions-runner
 curl -o actions-runner.tar.gz -L '{download["download_url"]}'
 echo '{download["sha256_checksum"]}  actions-runner.tar.gz' | shasum -a 256 -c
 tar xzf ./actions-runner.tar.gz
-set +e
 ./run.sh --jitconfig '{jit_config}'
+EOF
+# Separate runuser to delete VM regardless if previous commands fail
+runuser runner --login << 'EOF'
 az login --identity
 az group delete --name '{resource_group.name}' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
 EOF
