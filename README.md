@@ -26,13 +26,13 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
 1. Create Subscription
     - Name: `Self-hosted GitHub runners`
 1. Create Function App
+    - Hosting plan: Consumption (Serverless)
     - Resource group (create new): `runner-provisioner`
     - Name: `runner-provisioner`
     - Code or container: Code
     - Runtime stack: Python
     - Version: 3.11
     - Region: East US 2
-    - Hosting plan: Consumption (Serverless)
     - Monitoring: Enable application insights
 1. Create Key Vault
     - Resource group: `runner-provisioner`
@@ -51,7 +51,7 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Permissions: Read, Write, List
     - Expiry: 2 years in future **(set reminder)**
     - Generate
-    - Copy SAS URL & paste into Function App configuration application setting `WEBSITE_AUTH_TOKEN_CONTAINER_SASURL`
+    - Copy SAS URL & paste into Function App environment variable (app settings) `WEBSITE_AUTH_TOKEN_CONTAINER_SASURL`
 1. Storage account -> Lifecycle management -> Add a rule
     - Name: `delete`
     - Apply to all blobs
@@ -67,7 +67,7 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Start from scratch
     - Add permission: `Microsoft.Resources/subscriptions/resourceGroups/delete`
     - Copy ID from JSON (after "roleDefinitions/")
-    - Paste ID into Function App configuration `DELETE_VM_CUSTOM_ROLE_ID`
+    - Paste ID into Function App environment variable `DELETE_VM_CUSTOM_ROLE_ID`
 1. Subscription -> Access control -> Add custom role
     - Name: `Sign with key`
     - Start from scratch
@@ -103,11 +103,11 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
         - Description: `Runner provisioner`
         - Expires: 730 days **(set reminder)**
         - Copy value
-    - Paste client secret into Function App configuration `AZURE_CLIENT_SECRET`
-    - Go to overview, copy client ID & paste into Function App configuration `AZURE_CLIENT_ID`
-    - Copy tenant ID & paste into Function App configuration `AZURE_TENANT_ID`
+    - Paste client secret into Function App environment variable `AZURE_CLIENT_SECRET`
+    - Go to overview, copy client ID & paste into Function App environment variable `AZURE_CLIENT_ID`
+    - Copy tenant ID & paste into Function App environment variable `AZURE_TENANT_ID`
 1. Subscription
-    - Copy ID & paste into Function App configuration `AZURE_SUBSCRIPTION_ID`
+    - Copy ID & paste into Function App environment variable `AZURE_SUBSCRIPTION_ID`
 1. Subscription -> Access control -> Add role assignment
     - Name: `Runner provisioner`
     - Members: `self-hosted-github-runner-provisioner`
@@ -135,9 +135,9 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
 1. Edit identity provider
     - Remove `/v2.0` from end of issuer URL
     - Tenant requirement: Allow requests from specific tenants
-        - Copy `AZURE_TENANT_ID` from Function App configuration
+        - Copy `AZURE_TENANT_ID` from Function App environment variable
 1. Key Vault
-    - Copy vault URI and paste into Function App configuration `KEY_VAULT_URI`
+    - Copy vault URI and paste into Function App environment variable `KEY_VAULT_URI`
 1. Key Vault -> Access control -> Add role assignment
     - Name: `Sign with key`
     - Members: `self-hosted-github-runner-provisioner`
@@ -174,14 +174,14 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
             secrets.token_urlsafe()
             ```
         - Paste into GitHub
-        - Paste into Azure Function App configuration `GITHUB_WEBHOOK_SECRET`
+        - Paste into Azure Function App environment variable `GITHUB_WEBHOOK_SECRET`
     - Permissions:
         - Repository -> Actions: Read-only
         - Organization -> Self-hosted runners: Read and write
     - Subscribe to events: Workflow job
     - Only allow installation on organization account
 1. After registration
-    - Copy app ID to Azure Function App configuration `GITHUB_APP_ID`
+    - Copy app ID to Azure Function App environment variable `GITHUB_APP_ID`
     - Generate a private key
     - Azure -> Key Vault -> Keys -> Generate/import
         - Import
