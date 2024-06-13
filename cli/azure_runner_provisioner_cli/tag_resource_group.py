@@ -25,6 +25,7 @@ def get_jobs():
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
+        response.raise_for_status()
         for job in response.json()["jobs"]:
             yield job
         link = response.links.get("next", {"url": None})["url"]
