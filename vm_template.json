@@ -110,6 +110,11 @@
             ],
             "identity": { "type": "SystemAssigned" },
             "properties": {
+                "priority": "Spot",
+                "evictionPolicy": "Delete",
+                "billingProfile": {
+                    "maxPrice": -1
+                },
                 "additionalCapabilities": {
                     "hibernationEnabled": false
                 },
