@@ -1,0 +1,11 @@
+[Unit]
+Description=Gracefully stop current GitHub Actions step during Azure spot instance eviction
+
+[Service]
+Type=simple
+# pipx path
+ExecStart=$homedir/.local/bin/listen-for-spot-eviction-event --homedir=$homedir
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
