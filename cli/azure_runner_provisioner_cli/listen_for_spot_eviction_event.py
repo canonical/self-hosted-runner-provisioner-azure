@@ -44,10 +44,21 @@ def handle_eviction(homedir: pathlib.Path):
     step_pid = get_step_pid(homedir)
     # Create annotation on GitHub Actions summary
     # (https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-a-notice-message)
+    title = "Spot instance evicted"
+    try:
+        # Show job name in GitHub Actions annotation
+        # We cannot access the job name directly, so check if the workflow (e.g.
+        # data-platform-workflows integration_test_charm.yaml) saved the job name in a file
+        job_name = (homedir / "dpw/job_name").read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        pass
+    else:
+        if "\n" not in job_name:
+            title += f": {job_name}"
     write_to_step_stdout(
         step_pid,
         # Write notice once
-        "\n::notice title=Spot instance evicted::The runner's spot instance was evicted by Azure for capacity. Re-trigger this job\n\n",
+        f"\n::notice title={title}::The runner's spot instance was evicted by Azure for capacity. Re-trigger this job\n\n",
     )
     # Gracefully stop currently running step
     # Re-implementation of `actions/runner` behavior when step is cancelled due to
