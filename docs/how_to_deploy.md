@@ -146,7 +146,7 @@
         ```
 
 ## GitHub
-1. (Optional) Create runner group: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/managing-access-to-self-hosted-runners-using-groups#creating-a-self-hosted-runner-group-for-an-organization. Change `RUNNER_GROUP_ID` in [function_app.py](function_app.py)
+1. (Optional) Create runner group: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/managing-access-to-self-hosted-runners-using-groups#creating-a-self-hosted-runner-group-for-an-organization. Change `RUNNER_GROUP_ID` in [function_app.py](../function_app.py)
 1. Register GitHub App under organization (https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
     - Name: `Self-hosted runner provisioner`
     - Webhook URL: Go to Azure -> Function App -> `job` -> Get function URL -> default (function key)
