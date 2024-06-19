@@ -63,6 +63,10 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Then:
         - Delete the blob
 1. Subscription -> Access control -> Add custom role
+    - Name: `Cancel subscription`
+    - Start from scratch
+    - Add permission: `Microsoft.Subscription/cancel/action`
+1. Subscription -> Access control -> Add custom role
     - Name: `Delete VM`
     - Start from scratch
     - Add permission: `Microsoft.Resources/subscriptions/resourceGroups/delete`
@@ -108,6 +112,13 @@ When a GitHub Actions job is queued, GitHub sends a [workflow_job](https://docs.
     - Copy tenant ID & paste into Function App environment variable `AZURE_TENANT_ID`
 1. Subscription
     - Copy ID & paste into Function App environment variable `AZURE_SUBSCRIPTION_ID`
+1. Subscription -> Access control -> Add role assignment
+    - Name: `Cancel subscription`
+    - Members: People on your team who will monitor billing & will shutdown the automation if needed
+1. Subscription -> Access control -> Add role assignment
+    - Name: `Billing Reader`
+    - Members: People on your team who will monitor billing
+      - Important: include people who were assigned the previous role
 1. Subscription -> Access control -> Add role assignment
     - Name: `Runner provisioner`
     - Members: `self-hosted-github-runner-provisioner`
