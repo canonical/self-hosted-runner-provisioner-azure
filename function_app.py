@@ -117,8 +117,9 @@ def cleanup(timer: func.TimerRequest) -> None:
         models.ResourceGroup._attribute_map.pop("created_time")
 
 
-def response(body: str = None, *, status_code: int):
-    logger.info(f"Response {status_code=} {body=}")
+def response(body: str = None, *, status_code: int, log=True):
+    if log:
+        logger.info(f"Response {status_code=} {body=}")
     return func.HttpResponse(body, status_code=status_code)
 
 
@@ -306,6 +307,7 @@ def no_operation(body: str):
     return response(
         body,
         status_code=240,  # Custom status code for easier monitoring from GitHub webhook logs
+        log=False,  # Avoid ingestion costs on unnecessary logs
     )
 
 
@@ -359,6 +361,9 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     ):
         if required_label not in labels:
             return no_operation(f"{required_label=} missing from {labels=}")
+    # Regular logs for beginning/end of function execution are disabled because of high volume of
+    # webhooks that have no operation (to avoid ingestion costs on unnecessary logs)
+    logger.info("Executing job function")
     client = get_client()
     if action == Action.QUEUED:
         return provision_vm(
