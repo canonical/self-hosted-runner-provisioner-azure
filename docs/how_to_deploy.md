@@ -3,6 +3,7 @@
 ## Azure
 1. Create Subscription
     - Name: `Self-hosted GitHub runners`
+1. Enable tag inheritance for subscription: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/enable-tag-inheritance#to-enable-tag-inheritance-in-the-azure-portal-for-a-subscription
 1. Create Function App
     - Hosting plan: Consumption (Serverless)
     - Resource group (create new): `runner-provisioner`
