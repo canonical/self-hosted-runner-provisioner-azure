@@ -42,10 +42,6 @@
     - Then:
         - Delete the blob
 1. Subscription -> Access control -> Add custom role
-    - Name: `Cancel subscription`
-    - Start from scratch
-    - Add permission: `Microsoft.Subscription/cancel/action`
-1. Subscription -> Access control -> Add custom role
     - Name: `Delete VM`
     - Start from scratch
     - Add permission: `Microsoft.Resources/subscriptions/resourceGroups/delete`
@@ -92,8 +88,14 @@
 1. Subscription
     - Copy ID & paste into Function App environment variable `AZURE_SUBSCRIPTION_ID`
 1. Subscription -> Access control -> Add role assignment
-    - Name: `Cancel subscription`
+    - Name: `Owner`
+        - Owner role required to cancel subscription
     - Members: People on your team who will monitor billing & will shutdown the automation if needed
+    - Conditions:
+        - Allow user to only assign selected roles to selected principals
+        - Constrain roles and principal types
+        - Roles: `Billing Reader`
+        - Principal types: `Users`
 1. Subscription -> Access control -> Add role assignment
     - Name: `Billing Reader`
     - Members: People on your team who will monitor billing
@@ -103,18 +105,9 @@
     - Members: `self-hosted-github-runner-provisioner`
     - Conditions:
         - Allow user to only assign selected roles to selected principals
-        - Add action: Create or update role assignments
-        - Add expression
-            - Attribute source: Request
-            - Attribute: Role definition ID
-            - Operator: GuidEquals
-            - Role: `Delete VM`
-        - AND
-        - Add expression
-            - Attribute source: Request
-            - Attribute: Principal type
-            - Operator: StringEqualsIgnoreCase
-            - Value: ServicePrincipal
+        - Constrain roles and principal types
+        - Roles: `Delete VM`
+        - Principal types: `Service principals`
 1. Function App -> Authentication -> Add identity provider
     - Microsoft
     - Create new app registration
