@@ -92,10 +92,8 @@
         - Owner role required to cancel subscription
     - Members: People on your team who will monitor billing & will shutdown the automation if needed
     - Conditions:
-        - Allow user to only assign selected roles to selected principals
-        - Constrain roles and principal types
-        - Roles: `Billing Reader`
-        - Principal types: `Users`
+        - Allow user to assign all roles (highly privileged)
+            - This is required to be able to cancel subscription
 1. Subscription -> Access control -> Add role assignment
     - Name: `Billing Reader`
     - Members: People on your team who will monitor billing
