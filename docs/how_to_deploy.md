@@ -51,31 +51,6 @@
     - Name: `Sign with key`
     - Start from scratch
     - Add permission: `Microsoft.KeyVault/vaults/keys/sign/action`
-1. Subscription -> Access control -> Add custom role
-    - Name: `Runner provisioner`
-    - Start from scratch
-    - Add permissions:
-        ```
-        Microsoft.Resources/subscriptions/resourceGroups/read
-        Microsoft.Resources/subscriptions/resourceGroups/write
-        Microsoft.Resources/subscriptions/resourceGroups/delete
-        Microsoft.Resources/tags/write
-        Microsoft.Resources/deployments/write
-        Microsoft.Network/publicIPAddresses/read
-        Microsoft.Network/publicIPAddresses/write
-        Microsoft.Network/publicIPAddresses/join/action
-        Microsoft.Network/networkSecurityGroups/read
-        Microsoft.Network/networkSecurityGroups/write
-        Microsoft.Network/networkSecurityGroups/join/action
-        Microsoft.Network/virtualNetworks/read
-        Microsoft.Network/virtualNetworks/write
-        Microsoft.Network/virtualNetworks/subnets/join/action
-        Microsoft.Network/networkInterfaces/write
-        Microsoft.Network/networkInterfaces/join/action
-        Microsoft.Compute/virtualMachines/read
-        Microsoft.Compute/virtualMachines/write
-        Microsoft.Authorization/roleAssignments/write
-        ```
 1. Microsoft Entra ID -> App registrations -> New registration
     - Name: `self-hosted-github-runner-provisioner`
     - Certificates & secrets -> New client secret
@@ -99,13 +74,12 @@
     - Members: People on your team who will monitor billing
       - Important: include people who were assigned the previous role
 1. Subscription -> Access control -> Add role assignment
-    - Name: `Runner provisioner`
+    - Name: `Owner`
+        - Owner role required for billing killswitch that cancels subscription if budget exceeded
     - Members: `self-hosted-github-runner-provisioner`
     - Conditions:
-        - Allow user to only assign selected roles to selected principals
-        - Constrain roles and principal types
-        - Roles: `Delete VM`
-        - Principal types: `Service principals`
+        - Allow user to assign all roles (highly privileged)
+            - This is required to be able to cancel subscription
 1. Function App -> Authentication -> Add identity provider
     - Microsoft
     - Create new app registration

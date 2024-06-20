@@ -14,8 +14,11 @@ import azure.core.exceptions
 import azure.functions as func
 import azure.identity
 import azure.keyvault.keys.crypto as crypto
+import azure.mgmt.costmanagement
+import azure.mgmt.costmanagement.models as cost_models
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
+import azure.mgmt.subscription
 import jinja2
 import jwt
 import requests
@@ -27,7 +30,17 @@ GITHUB_ORGANIZATION = "canonical"
 # If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
 # provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
 # provisioned to catch up with the jobs that were skipped.)
-CONCURRENT_RUNNER_LIMIT = 50
+CONCURRENT_RUNNER_LIMIT = 50  # Keep in sync with `MONTHLY_BUDGET_CUTOFF_USD`
+# Cost data is *not* real-time
+# It is "typically available in Cost Management within 8-24 hours"
+# https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/understand-cost-mgt-data#cost-and-usage-data-updates-and-retention
+# To calculate monthly budget cutoff, take the actual budget and subtract
+# `CONCURRENT_RUNNER_LIMIT` * price of runner per hour * 24 hours
+# So that, if cost data is delayed by 24 hours, we do not exceed the actual budget
+# Spot instance price can increase to standard price (to avoid eviction) since we set
+# `"maxPrice": -1`—so use standard price to calculate budget cutoff
+_30_DAY_BUDGET_CUTOFF_USD = 770  # 1000 - 50 * 0.1810 * 24
+assert _30_DAY_BUDGET_CUTOFF_USD < 1000 - CONCURRENT_RUNNER_LIMIT * 0.1810 * 24
 
 # Set root logging level to WARNING (used by our Python package dependencies)
 logging.getLogger().setLevel(logging.WARNING)
@@ -37,7 +50,7 @@ logger.setLevel(logging.INFO)
 app = func.FunctionApp()
 
 
-def get_client():
+def get_credential():
     # Use function instead of global variable so that Azure detects app functions correctly even if
     # credential environment variables are missing. (For easier troubleshooting)
 
@@ -45,11 +58,66 @@ def get_client():
     # GitHub webhooks have 10 second timeout
     # (https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks#respond-within-10-seconds)
     # Use Azure Functions application settings (accessible as environment variables) instead of managed identity
-    credential = azure.identity.EnvironmentCredential()
+    return azure.identity.EnvironmentCredential()
 
+
+def get_client():
     return azure.mgmt.resource.resources.v2022_09_01.ResourceManagementClient(
-        credential, os.environ["AZURE_SUBSCRIPTION_ID"]
+        get_credential(), os.environ["AZURE_SUBSCRIPTION_ID"]
     )
+
+
+def cancel_subscription_if_billing_exceeded(*, log_if_under_budget=True):
+    """Cancel Azure subscription if `_30_DAY_BUDGET_CUTOFF_USD` exceeded"""
+    now = datetime.datetime.now(datetime.UTC)
+    old = now - datetime.timedelta(days=30)
+    # From testing, it appears that Azure only uses the date, not the time
+    # In case that behavior changes in the future, remove the time from `old`
+    old = datetime.datetime(
+        year=old.year, month=old.month, day=old.day, tzinfo=datetime.UTC
+    )
+    query = cost_models.QueryDefinition(
+        type=cost_models.ExportType.ACTUAL_COST,
+        timeframe=cost_models.TimeframeType.CUSTOM,
+        time_period=cost_models.QueryTimePeriod(from_property=old, to=now),
+        dataset=cost_models.QueryDataset(
+            granularity=cost_models.GranularityType.DAILY,
+            aggregation={
+                # Key unused
+                "CostUSD": cost_models.QueryAggregation(
+                    name="CostUSD", function=cost_models.FunctionType.SUM
+                )
+            },
+        ),
+    )
+    cost_client = azure.mgmt.costmanagement.CostManagementClient(get_credential())
+    result = cost_client.query.usage(
+        f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/', query
+    )
+    # API response is "columns" (header row) and "rows" (list of values; ordering matches "columns"
+    # ordering)
+    # Convert API response to Iterable[dict]
+    keys = [column.name for column in result.columns]
+    days = (dict(zip(keys, row)) for row in result.rows)
+
+    # Cost of previous 30 days + cost today
+    cost = round(sum(day["CostUSD"] for day in days))
+    if cost >= _30_DAY_BUDGET_CUTOFF_USD:
+        # Cancel subscription
+        subscription_client = azure.mgmt.subscription.SubscriptionClient(
+            get_credential()
+        )
+        subscription_client.subscription.cancel(os.environ["AZURE_SUBSCRIPTION_ID"])
+    elif log_if_under_budget:
+        logger.info(f"30 day {cost=} under budget {_30_DAY_BUDGET_CUTOFF_USD}")
+
+
+@app.schedule(
+    schedule="49 * * * *",  # Every hour at :49
+    arg_name="timer",
+)
+def billing_killswitch(timer: func.TimerRequest) -> None:
+    cancel_subscription_if_billing_exceeded()
 
 
 @app.schedule(
@@ -165,6 +233,7 @@ def provision_vm(
     request: func.HttpRequest,
     app_installation_id: int,
 ) -> func.HttpResponse:
+    cancel_subscription_if_billing_exceeded(log_if_under_budget=False)
     provisioned_runners = list(
         client.resource_groups.list(filter=f"tagName eq 'runner'")
     )
@@ -182,8 +251,7 @@ def provision_vm(
     }
     key = AzureKey(
         crypto.CryptographyClient(
-            f'{os.environ["KEY_VAULT_URI"]}keys/github-app',
-            azure.identity.EnvironmentCredential(),
+            f'{os.environ["KEY_VAULT_URI"]}keys/github-app', get_credential()
         )
     )
     github_jwt = jwt.JWT().encode(payload, key, alg="RS256")
