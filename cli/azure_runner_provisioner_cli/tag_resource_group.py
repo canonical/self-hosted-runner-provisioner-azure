@@ -75,6 +75,10 @@ def main():
     response = requests.post(
         f"https://{args.website_hostname}/api/tag",
         headers={"X-ZUMO-AUTH": token2},
-        json={"job_id": job_id, "resource_group": args.resource_group},
+        json={
+            "job_id": job_id,
+            "resource_group": args.resource_group,
+            "repository": os.environ["GITHUB_REPOSITORY"],
+        },
     )
     response.raise_for_status()

@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import string
 import time
 
@@ -538,11 +539,20 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
             raise ValueError
     except (KeyError, ValueError):
         return response("Invalid job id", status_code=400)
+    try:
+        repository = request_data["repository"]
+        if not isinstance(repository, str) and re.fullmatch(
+            r"[a-zA-Z0-9\-]+/[a-zA-Z0-9.\-_]+", repository
+        ):
+            raise ValueError
+        repository = repository.removeprefix(f"{GITHUB_ORGANIZATION}/")
+    except (KeyError, ValueError):
+        return response("Invalid repository", status_code=400)
     client.tags.begin_update_at_scope(
         resource_group.id,
         models.TagsPatchResource(
             operation=models.TagsPatchOperation.MERGE,
-            properties=models.Tags(tags={"job": str(job_id)}),
+            properties=models.Tags(tags={"job": str(job_id), "repository": repository}),
         ),
     )
     return response("job tag added", status_code=200)
