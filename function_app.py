@@ -67,7 +67,11 @@ def get_client():
     )
 
 
-def cancel_subscription_if_billing_exceeded(*, log_if_under_budget=True):
+@app.schedule(
+    schedule="49 * * * *",  # Every hour at :49
+    arg_name="timer",
+)
+def billing_killswitch(timer: func.TimerRequest) -> None:
     """Cancel Azure subscription if `_30_DAY_BUDGET_CUTOFF_USD` exceeded"""
     now = datetime.datetime.now(datetime.UTC)
     old = now - datetime.timedelta(days=30)
@@ -108,16 +112,8 @@ def cancel_subscription_if_billing_exceeded(*, log_if_under_budget=True):
             get_credential()
         )
         subscription_client.subscription.cancel(os.environ["AZURE_SUBSCRIPTION_ID"])
-    elif log_if_under_budget:
+    else:
         logger.info(f"30 day {cost=} under budget {_30_DAY_BUDGET_CUTOFF_USD}")
-
-
-@app.schedule(
-    schedule="49 * * * *",  # Every hour at :49
-    arg_name="timer",
-)
-def billing_killswitch(timer: func.TimerRequest) -> None:
-    cancel_subscription_if_billing_exceeded()
 
 
 @app.schedule(
@@ -233,7 +229,6 @@ def provision_vm(
     request: func.HttpRequest,
     app_installation_id: int,
 ) -> func.HttpResponse:
-    cancel_subscription_if_billing_exceeded(log_if_under_budget=False)
     provisioned_runners = list(
         client.resource_groups.list(filter=f"tagName eq 'runner'")
     )
