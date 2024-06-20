@@ -548,11 +548,41 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
         repository = repository.removeprefix(f"{GITHUB_ORGANIZATION}/")
     except (KeyError, ValueError):
         return response("Invalid repository", status_code=400)
+    try:
+        event = request_data["event"]
+        if not isinstance(event, str) and re.fullmatch(r"[a-z_]+", event):
+            raise ValueError
+    except (KeyError, ValueError):
+        return response("Invalid event", status_code=400)
+    try:
+        github_username = request_data["github_username"]
+        if not isinstance(github_username, str) and re.fullmatch(
+            r"[a-zA-Z0-9\-]+", github_username
+        ):
+            raise ValueError
+    except (KeyError, ValueError):
+        return response("Invalid GitHub username", status_code=400)
+    try:
+        git_ref = request_data["git_ref"]
+        if not isinstance(git_ref, str):
+            raise ValueError
+    except (KeyError, ValueError):
+        return response("Invalid git ref", status_code=400)
+    tags = {
+        "job": str(job_id),
+        "repository": repository,
+        "event": event,
+        "git_ref": git_ref,
+    }
+    if event != "schedule":
+        # Username will be whoever modified schedule last, which is not helpful data
+        # Omit username on `schedule` to avoid skewing data
+        tags["github_username"] = github_username
     client.tags.begin_update_at_scope(
         resource_group.id,
         models.TagsPatchResource(
             operation=models.TagsPatchOperation.MERGE,
-            properties=models.Tags(tags={"job": str(job_id), "repository": repository}),
+            properties=models.Tags(tags=tags),
         ),
     )
     return response("job tag added", status_code=200)

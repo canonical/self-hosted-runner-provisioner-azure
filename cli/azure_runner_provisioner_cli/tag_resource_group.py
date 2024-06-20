@@ -79,6 +79,9 @@ def main():
             "job_id": job_id,
             "resource_group": args.resource_group,
             "repository": os.environ["GITHUB_REPOSITORY"],
+            "event": os.environ["GITHUB_EVENT_NAME"],
+            "github_username": os.environ["GITHUB_TRIGGERING_ACTOR"],
+            "git_ref": os.environ["GITHUB_REF_NAME"],
         },
     )
     response.raise_for_status()
