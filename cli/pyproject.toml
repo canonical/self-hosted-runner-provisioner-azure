@@ -16,6 +16,7 @@ tag-resource-group = "azure_runner_provisioner_cli.tag_resource_group:main"
 listen-for-spot-eviction-event = "azure_runner_provisioner_cli.listen_for_spot_eviction_event:main"
 set-up-pre-job-script = "azure_runner_provisioner_cli.set_up_pre_job_script:main"
 set-up-spot-eviction-listener-service = "azure_runner_provisioner_cli.set_up_spot_evicition_listener_service:main"
+set-up-delete-job-script = "azure_runner_provisioner_cli.set_up_delete_job_script:main"
 
 [build-system]
 requires = ["poetry-core"]

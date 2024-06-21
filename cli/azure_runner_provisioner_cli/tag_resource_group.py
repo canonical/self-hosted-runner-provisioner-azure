@@ -85,3 +85,5 @@ def main():
         },
     )
     response.raise_for_status()
+    # If this file is missing, VM will be deleted 5 minutes after start
+    pathlib.Path("~/job_started").expanduser().touch()

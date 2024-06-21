@@ -1,0 +1,8 @@
+sleep 300
+if [[ ! -f "$$HOME/job_started" ]]
+then
+    set +e
+    az login --identity
+    az group delete --name '$resource_group_name' --force-deletion-types Microsoft.Compute/virtualMachines --yes --no-wait
+    sudo shutdown now
+fi

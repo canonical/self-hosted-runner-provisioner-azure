@@ -27,6 +27,8 @@ then
     pipx install git+https://github.com/canonical/self-hosted-runner-provisioner-azure#subdirectory=cli
     set-up-pre-job-script --website-auth-client-id '{{ website_auth_client_id }}' --website-hostname '{{ website_hostname }}' --resource-group '{{ resource_group_name }}'
     set-up-spot-eviction-listener-service
+    set-up-delete-job-script --resource-group-name '{{ resource_group_name }}'
+    ./delete_if_no_job_after_5_minutes.sh &
     cd actions-runner
     curl -o actions-runner.tar.gz -L '{{ runner_download_url }}'
     echo '{{ runner_download_checksum }}  actions-runner.tar.gz' | shasum -a 256 -c
