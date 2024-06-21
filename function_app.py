@@ -118,7 +118,13 @@ def billing_killswitch(timer: func.TimerRequest) -> None:
         subscription_client = azure.mgmt.subscription.SubscriptionClient(
             get_credential()
         )
-        subscription_client.subscription.cancel(os.environ["AZURE_SUBSCRIPTION_ID"])
+        subscription_client.subscription.cancel(
+            os.environ["AZURE_SUBSCRIPTION_ID"],
+            # Undocumented API feature
+            # (https://github.com/Azure/azure-rest-api-specs/issues/20254#issuecomment-1708620983)
+            # Reverse-engineered from Azure Portal
+            params={"IgnoreResourceCheck": True},
+        )
     else:
         logger.info(f"30 day {cost=} under budget {_30_DAY_BUDGET_CUTOFF_USD}")
 
