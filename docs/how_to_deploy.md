@@ -4,6 +4,19 @@
 1. Create Subscription
     - Name: `Self-hosted GitHub runners`
 1. Enable tag inheritance for subscription: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/enable-tag-inheritance#to-enable-tag-inheritance-in-the-azure-portal-for-a-subscription
+1. Subscription -> Budgets -> Add
+    - Name: `runner-budget`
+    - Reset period: `Monthly`
+    - Expiration date: As far into future as possible **(set reminder)**
+    - Amount: Keep in sync with `_30_DAY_BUDGET_CUTOFF_USD` in [function_app.py](../function_app.py)
+    - Create alert
+        - Type: Actual
+        - %: 90
+    - Create alert
+        - Type: Actual
+        - %: 100
+    - Add alert recipients
+        - Emails of people on your team who will monitor billing & will shutdown the automation if needed
 1. Create Function App
     - Hosting plan: Consumption (Serverless)
     - Resource group (create new): `runner-provisioner`

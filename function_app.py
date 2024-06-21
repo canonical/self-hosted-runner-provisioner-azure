@@ -40,7 +40,10 @@ CONCURRENT_RUNNER_LIMIT = 50  # Keep in sync with `MONTHLY_BUDGET_CUTOFF_USD`
 # So that, if cost data is delayed by 24 hours, we do not exceed the actual budget
 # Spot instance price can increase to standard price (to avoid eviction) since we set
 # `"maxPrice": -1`—so use standard price to calculate budget cutoff
-_30_DAY_BUDGET_CUTOFF_USD = 770  # 1000 - 50 * 0.1810 * 24
+_30_DAY_BUDGET_CUTOFF_USD = (
+    # 1000 - 50 * 0.1810 * 24
+    770  # Keep in sync with Azure budget
+)
 assert _30_DAY_BUDGET_CUTOFF_USD < 1000 - CONCURRENT_RUNNER_LIMIT * 0.1810 * 24
 
 # Set root logging level to WARNING (used by our Python package dependencies)
