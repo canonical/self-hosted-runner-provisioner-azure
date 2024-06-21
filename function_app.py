@@ -129,6 +129,35 @@ def billing_killswitch(timer: func.TimerRequest) -> None:
         logger.info(f"30 day {cost=} under budget {_30_DAY_BUDGET_CUTOFF_USD}")
 
 
+def response(body: str = None, *, status_code: int, log=True):
+    if log:
+        logger.info(f"Response {status_code=} {body=}")
+    return func.HttpResponse(body, status_code=status_code)
+
+
+@app.route(
+    route="budget_exceeded",
+    trigger_arg_name="request",
+    auth_level=func.AuthLevel.FUNCTION,
+    methods=(func.HttpMethod.POST,),
+)
+def budget_exceeded(request: func.HttpRequest) -> func.HttpResponse:
+    """Cancel Azure subscription
+
+    Triggered by Azure budget alert
+    https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets#trigger-an-action-group
+    """
+    subscription_client = azure.mgmt.subscription.SubscriptionClient(get_credential())
+    subscription_client.subscription.cancel(
+        os.environ["AZURE_SUBSCRIPTION_ID"],
+        # Undocumented API feature
+        # (https://github.com/Azure/azure-rest-api-specs/issues/20254#issuecomment-1708620983)
+        # Reverse-engineered from Azure Portal
+        params={"IgnoreResourceCheck": True},
+    )
+    return response("Subscription cancelled", status_code=200)
+
+
 @dataclasses.dataclass
 class Day:
     cost_usd: float
@@ -327,12 +356,6 @@ def cleanup(timer: func.TimerRequest) -> None:
         # Without this, sometimes the `job()` function fails to create a resource group.)
         models.ResourceGroup._validation.pop("created_time")
         models.ResourceGroup._attribute_map.pop("created_time")
-
-
-def response(body: str = None, *, status_code: int, log=True):
-    if log:
-        logger.info(f"Response {status_code=} {body=}")
-    return func.HttpResponse(body, status_code=status_code)
 
 
 class AzureKey(jwt.AbstractJWKBase):

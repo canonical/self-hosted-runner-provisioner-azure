@@ -4,19 +4,6 @@
 1. Create Subscription
     - Name: `Self-hosted GitHub runners`
 1. Enable tag inheritance for subscription: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/enable-tag-inheritance#to-enable-tag-inheritance-in-the-azure-portal-for-a-subscription
-1. Subscription -> Budgets -> Add
-    - Name: `runner-budget`
-    - Reset period: `Monthly`
-    - Expiration date: As far into future as possible **(set reminder)**
-    - Amount: Keep in sync with `_30_DAY_BUDGET_CUTOFF_USD` in [function_app.py](../function_app.py)
-    - Create alert
-        - Type: Actual
-        - %: 90
-    - Create alert
-        - Type: Actual
-        - %: 100
-    - Add alert recipients
-        - Emails of people on your team who will monitor billing & will shutdown the automation if needed
 1. Create Function App
     - Hosting plan: Consumption (Serverless)
     - Resource group (create new): `runner-provisioner`
@@ -122,6 +109,33 @@
     - Clone this repository
     - Open repository in VS Code
     - Deploy to Azure: https://learn.microsoft.com/en-us/azure/azure-functions/create-first-function-vs-code-python?pivots=python-mode-decorators#deploy-the-project-to-azure
+1. Monitor -> Alerts -> Action groups -> Create
+    - Resource group: `runner-provisioner`
+    - Region: Global
+    - Action group name: `budget-killswitch`
+    - Display name: `Killswitch`
+    - Actions
+      - Action type: `Azure Function`
+      - Name: `cancel-subscription`
+      - Resource group: `runner-provisioner`
+      - Function app: `runner-provisioner`
+      - Azure Function: `budget_exceeded`
+1. Subscription -> Budgets -> Add
+    - Name: `runner-budget`
+    - Reset period: `Monthly`
+    - Expiration date: As far into future as possible **(set reminder)**
+    - Amount: Keep in sync with `_30_DAY_BUDGET_CUTOFF_USD` in [function_app.py](../function_app.py)
+    - Create alert
+        - Type: Actual
+        - %: 90
+        - Action group: None
+    - Create alert
+        - Type: Actual
+        - %: 100
+        - Action group: `budget-killswitch`
+    - Add alert recipients
+        - Emails of people on your team who will monitor billing & will shutdown the automation if needed
+
 1. Subscription -> Resource providers
     - (https://learn.microsoft.com/en-us/azure/azure-resource-manager/troubleshooting/error-register-resource-provider?tabs=azure-portal#solution)
     - Register:
@@ -162,5 +176,5 @@
     - https://developers.mattermost.com/integrate/reference/bot-accounts/
     - Paste token into Azure Function App environment variable `MATTERMOST_BOT_TOKEN`
     - Copy server URL (e.g. https://chat.charmhub.io) to Azure Function App environment variable `MATTERMOST_SERVER_URL`
-2. Invite bot to channel
+1. Invite bot to channel
     - Copy channel ID (from info sidebar) to Azure Function App environment variable `MATTERMOST_CHANNEL_ID`
