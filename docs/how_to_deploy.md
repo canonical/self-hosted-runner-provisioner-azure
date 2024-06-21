@@ -143,3 +143,11 @@
         - Name: `github-app`
     - Delete private key file from local computer
     - Install App
+
+## Mattermost
+1. Create bot account
+    - https://developers.mattermost.com/integrate/reference/bot-accounts/
+    - Paste token into Azure Function App environment variable `MATTERMOST_BOT_TOKEN`
+    - Copy server URL (e.g. https://chat.charmhub.io) to Azure Function App environment variable `MATTERMOST_SERVER_URL`
+2. Invite bot to channel
+    - Copy channel ID (from info sidebar) to Azure Function App environment variable `MATTERMOST_CHANNEL_ID`

@@ -1,4 +1,5 @@
 import base64
+import dataclasses
 import datetime
 import enum
 import hashlib
@@ -67,12 +68,7 @@ def get_client():
     )
 
 
-@app.schedule(
-    schedule="49 * * * *",  # Every hour at :49
-    arg_name="timer",
-)
-def billing_killswitch(timer: func.TimerRequest) -> None:
-    """Cancel Azure subscription if `_30_DAY_BUDGET_CUTOFF_USD` exceeded"""
+def get_billing_last_30_days():
     now = datetime.datetime.now(datetime.UTC)
     old = now - datetime.timedelta(days=30)
     # From testing, it appears that Azure only uses the date, not the time
@@ -100,10 +96,18 @@ def billing_killswitch(timer: func.TimerRequest) -> None:
     )
     # API response is "columns" (header row) and "rows" (list of values; ordering matches "columns"
     # ordering)
-    # Convert API response to Iterable[dict]
+    # Convert API response to list[dict]
     keys = [column.name for column in result.columns]
-    days = (dict(zip(keys, row)) for row in result.rows)
+    return [dict(zip(keys, row)) for row in result.rows]
 
+
+@app.schedule(
+    schedule="49 * * * *",  # Every hour at :49
+    arg_name="timer",
+)
+def billing_killswitch(timer: func.TimerRequest) -> None:
+    """Cancel Azure subscription if `_30_DAY_BUDGET_CUTOFF_USD` exceeded"""
+    days = get_billing_last_30_days()
     # Cost of previous 30 days + cost today
     cost = round(sum(day["CostUSD"] for day in days))
     if cost >= _30_DAY_BUDGET_CUTOFF_USD:
@@ -114,6 +118,140 @@ def billing_killswitch(timer: func.TimerRequest) -> None:
         subscription_client.subscription.cancel(os.environ["AZURE_SUBSCRIPTION_ID"])
     else:
         logger.info(f"30 day {cost=} under budget {_30_DAY_BUDGET_CUTOFF_USD}")
+
+
+@dataclasses.dataclass
+class Day:
+    cost_usd: float
+    date: datetime.date
+
+    @classmethod
+    def from_azure_api(cls, api_data: dict):
+        # Example: "20240621"
+        date = str(api_data["UsageDate"])
+        assert len(date) == 8
+        date = datetime.date(
+            year=int(date[0:4]), month=int(date[4:6]), day=int(date[6:8])
+        )
+        return cls(api_data["CostUSD"], date)
+
+
+@app.schedule(
+    schedule="0 6 * * *",  # Every day at 06:00 UTC
+    arg_name="timer",
+)
+def billing_notification(timer: func.TimerRequest) -> None:
+    """Send Mattermost message with billing usage"""
+    days_ = [Day.from_azure_api(day) for day in get_billing_last_30_days()]
+    today = datetime.date.today()
+
+    def cost(previous_days: int):
+        return round(
+            sum(
+                day.cost_usd
+                for day in days_
+                if (today - datetime.timedelta(days=previous_days)) <= day.date < today
+            )
+        )
+
+    yesterday = cost(1)
+    previous_7_days = cost(7)
+    previous_30_days = cost(30)
+    # https://docs.mattermost.com/collaborate/format-messages.html#tables
+    message = f"""Time period | Cost
+-|-:
+Yesterday (UTC) | ${yesterday}
+Previous 7 days | ${previous_7_days}
+Previous 30 days | ${previous_30_days}
+"""
+    # Attempt to calculate savings. If that fails, send notification anyway
+    try:
+        now = datetime.datetime.now(datetime.UTC)
+        query = cost_models.QueryDefinition(
+            type=cost_models.ExportType.ACTUAL_COST,
+            timeframe=cost_models.TimeframeType.CUSTOM,
+            time_period=cost_models.QueryTimePeriod(
+                from_property=datetime.datetime(
+                    year=2024, month=6, day=1, tzinfo=datetime.UTC
+                ),
+                to=now,
+            ),
+            dataset=cost_models.QueryDataset(
+                granularity=cost_models.GranularityType.DAILY,
+                aggregation={
+                    # Key unused
+                    "CostUSD": cost_models.QueryAggregation(
+                        name="CostUSD", function=cost_models.FunctionType.SUM
+                    )
+                },
+            ),
+        )
+        cost_client = azure.mgmt.costmanagement.CostManagementClient(get_credential())
+        result = cost_client.query.usage(
+            f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/', query
+        )
+        if result.next_link:
+            # TODO: support paginated API response
+            raise NotImplementedError("Paginated response not supported")
+        # API response is "columns" (header row) and "rows" (list of values; ordering matches "columns"
+        # ordering)
+        # Convert API response to Iterable[dict]
+        keys = [column.name for column in result.columns]
+        days = (dict(zip(keys, row)) for row in result.rows)
+
+        all_time_cost = round(sum(day["CostUSD"] for day in days))
+
+        query = cost_models.QueryDefinition(
+            type=cost_models.ExportType.ACTUAL_COST,
+            timeframe=cost_models.TimeframeType.CUSTOM,
+            time_period=cost_models.QueryTimePeriod(
+                from_property=datetime.datetime(
+                    year=2024, month=6, day=1, tzinfo=datetime.UTC
+                ),
+                to=now,
+            ),
+            dataset=cost_models.QueryDataset(
+                granularity=cost_models.GranularityType.DAILY,
+                aggregation={
+                    # Key unused
+                    "UsageQuantity": cost_models.QueryAggregation(
+                        name="UsageQuantity", function=cost_models.FunctionType.SUM
+                    )
+                },
+                filter=cost_models.QueryFilter(
+                    dimensions=cost_models.QueryComparisonExpression(
+                        name="ResourceType",
+                        operator=cost_models.QueryOperatorType.IN,
+                        values=["Microsoft.Compute/virtualMachines"],
+                    )
+                ),
+            ),
+        )
+        result = cost_client.query.usage(
+            f'/subscriptions/{os.environ["AZURE_SUBSCRIPTION_ID"]}/', query
+        )
+        if result.next_link:
+            # TODO: support paginated API response
+            raise NotImplementedError("Paginated response not supported")
+        # API response is "columns" (header row) and "rows" (list of values; ordering matches "columns"
+        # ordering)
+        # Convert API response to Iterable[dict]
+        keys = [column.name for column in result.columns]
+        days = (dict(zip(keys, row)) for row in result.rows)
+
+        all_time_virtual_machine_hours = sum(day["UsageQuantity"] for day in days)
+        # https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#per-minute-rates-for-arm64-powered-larger-runners
+        github_cost = all_time_virtual_machine_hours * 0.6
+        cost_savings = round(github_cost - all_time_cost)
+        message += f"\n\nThis automation has saved Canonical ${cost_savings} compared to GitHub-hosted runners"
+    except Exception:
+        logger.exception("Failed to display cost savings")
+    response_ = requests.post(
+        f'{os.environ["MATTERMOST_SERVER_URL"].removesuffix("/")}/api/v4/posts',
+        headers={"Authorization": f'Bearer {os.environ["MATTERMOST_BOT_TOKEN"]}'},
+        json={"channel_id": os.environ["MATTERMOST_CHANNEL_ID"], "message": message},
+    )
+    response_.raise_for_status()
 
 
 @app.schedule(
