@@ -135,7 +135,6 @@
         - Action group: `budget-killswitch`
     - Add alert recipients
         - Emails of people on your team who will monitor billing & will shutdown the automation if needed
-
 1. Subscription -> Resource providers
     - (https://learn.microsoft.com/en-us/azure/azure-resource-manager/troubleshooting/error-register-resource-provider?tabs=azure-portal#solution)
     - Register:
@@ -143,6 +142,17 @@
         Microsoft.Network
         Microsoft.Compute
         ```
+1. (Optional) Function App -> Custom domains -> Buy App Service domain
+    - Resource group: `runner-provisioner`
+    - Hostname assignment
+        - root: No
+        - 'www' subdomain: No
+    - Auto renewal: Enable
+    - Privacy protection: Enable
+    - Paste domain name (e.g. example.com) into Function App environment variable `CUSTOM_DOMAIN_NAME`
+    - Paste `runner-provisioner` into Function App environment variable `CUSTOM_DOMAIN_RESOURCE_GROUP`
+1. (Only if previous step followed) DNS zones -> example.com -> Locks -> Delete lock
+    - Needed to delete DNS records
 
 ## GitHub
 1. (Optional) Create runner group: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/managing-access-to-self-hosted-runners-using-groups#creating-a-self-hosted-runner-group-for-an-organization. Change `RUNNER_GROUP_ID` in [function_app.py](../function_app.py)

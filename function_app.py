@@ -17,6 +17,10 @@ import azure.identity
 import azure.keyvault.keys.crypto as crypto
 import azure.mgmt.costmanagement
 import azure.mgmt.costmanagement.models as cost_models
+import azure.mgmt.dns.v2018_05_01
+import azure.mgmt.dns.v2018_05_01.models as dns_models
+import azure.mgmt.network
+import azure.mgmt.network.models as network_models
 import azure.mgmt.resource.resources.v2022_09_01
 import azure.mgmt.resource.resources.v2022_09_01.models as models
 import azure.mgmt.subscription
@@ -545,6 +549,21 @@ def no_operation(body: str):
     )
 
 
+def delete_dns_record(job_id: int):
+    if custom_domain := os.environ.get("CUSTOM_DOMAIN_NAME"):
+        # Delete DNS record (for convenient SSH)
+        dns_client = azure.mgmt.dns.v2018_05_01.DnsManagementClient(
+            get_credential(), os.environ["AZURE_SUBSCRIPTION_ID"]
+        )
+        dns_client.record_sets.delete(
+            os.environ["CUSTOM_DOMAIN_RESOURCE_GROUP"],
+            custom_domain,
+            str(job_id),
+            dns_models.RecordType.A,
+        )
+        logger.info("Deleted DNS record")
+
+
 @app.route(
     route="job",
     trigger_arg_name="request",
@@ -616,6 +635,7 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         if len(resource_groups) > 1:
             raise ValueError("Multiple VMs with same job")
         elif len(resource_groups) == 0:
+            delete_dns_record(job_id)
             return response(
                 "Resource group not found (probably already deleted)",
                 status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
@@ -626,10 +646,12 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
         except azure.core.exceptions.ResourceNotFoundError:
+            delete_dns_record(job_id)
             return response(
                 "Resource group already deleted",
                 status_code=232,  # Custom status code for easier monitoring from GitHub webhook logs
             )
+        delete_dns_record(job_id)
         return response(
             "Resource group deleted",
             status_code=230,  # Custom status code for easier monitoring from GitHub webhook logs
@@ -818,5 +840,36 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
             properties=models.Tags(tags=tags),
         ),
     )
+    if custom_domain := os.environ.get("CUSTOM_DOMAIN_NAME"):
+        # Create DNS record for convenient SSH
+        # For example, for job 26589009357, create DNS record at 26589009357.example.com so that
+        # developer can SSH into runner with `ssh runner@26589009357.example.com`
+
+        # Get runner's IP address
+        network_client = azure.mgmt.network.NetworkManagementClient(
+            get_credential(),
+            os.environ["AZURE_SUBSCRIPTION_ID"],
+            api_version="2023-09-01",
+        )
+        public_ip: network_models.PublicIPAddress = network_client.public_ip_addresses.get(
+            resource_group_name=resource_group_name,
+            public_ip_address_name="runner-public-ip",  # Copied from vm_template.json
+        )
+        # Create DNS record
+        dns_client = azure.mgmt.dns.v2018_05_01.DnsManagementClient(
+            get_credential(), os.environ["AZURE_SUBSCRIPTION_ID"]
+        )
+        dns_client.record_sets.create_or_update(
+            os.environ["CUSTOM_DOMAIN_RESOURCE_GROUP"],
+            custom_domain,
+            str(job_id),
+            dns_models.RecordType.A,
+            dns_models.RecordSet(
+                ttl=300,
+                a_records=[
+                    dns_models.ARecord(ipv4_address=public_ip.ip_address),
+                ],
+            ),
+        )
+        logger.info("Added DNS record")
     return response("job tag added", status_code=200)
-    # TODO future improvement: create dns record (for convenient ssh)
