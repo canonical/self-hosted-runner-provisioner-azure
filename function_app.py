@@ -35,7 +35,7 @@ GITHUB_ORGANIZATION = "canonical"
 # If a job is queued while this limit is exceeded, it will be skipped. A runner will *not* be
 # provisioned later. (Later, if the limit is no longer exceeded, not enough runners will be
 # provisioned to catch up with the jobs that were skipped.)
-CONCURRENT_RUNNER_LIMIT = 50  # Keep in sync with `MONTHLY_BUDGET_CUTOFF_USD`
+CONCURRENT_RUNNER_LIMIT = 100  # Keep in sync with `MONTHLY_BUDGET_CUTOFF_USD`
 # Cost data is *not* real-time
 # It is "typically available in Cost Management within 8-24 hours"
 # https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/understand-cost-mgt-data#cost-and-usage-data-updates-and-retention
@@ -45,8 +45,8 @@ CONCURRENT_RUNNER_LIMIT = 50  # Keep in sync with `MONTHLY_BUDGET_CUTOFF_USD`
 # Spot instance price can increase to standard price (to avoid eviction) since we set
 # `"maxPrice": -1`—so use standard price to calculate budget cutoff
 _30_DAY_BUDGET_CUTOFF_USD = (
-    # 1000 - 50 * 0.1810 * 24
-    770  # Keep in sync with Azure budget
+    # 1000 - 100 * 0.1810 * 24
+    560  # Keep in sync with Azure budget
 )
 assert _30_DAY_BUDGET_CUTOFF_USD < 1000 - CONCURRENT_RUNNER_LIMIT * 0.1810 * 24
 
