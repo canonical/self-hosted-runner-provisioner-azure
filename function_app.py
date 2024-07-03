@@ -614,9 +614,11 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
     ):
         if required_label not in labels:
             return no_operation(f"{required_label=} missing from {labels=}")
+    job_id = body["workflow_job"]["id"]
+    repository_name = body["repository"]["full_name"]
     # Regular logs for beginning/end of function execution are disabled because of high volume of
     # webhooks that have no operation (to avoid ingestion costs on unnecessary logs)
-    logger.info("Executing job function")
+    logger.info(f"Executing job function {job_id=} {repository_name=}")
     client = get_client()
     if action == Action.QUEUED:
         return provision_vm(
@@ -626,7 +628,6 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
         )
     elif action == Action.COMPLETED:
         # Delete resource group
-        job_id = body["workflow_job"]["id"]
         resource_groups = list(
             client.resource_groups.list(
                 filter=f"tagName eq 'job' and tagValue eq '{job_id}'"
@@ -640,9 +641,11 @@ def job(request: func.HttpRequest) -> func.HttpResponse:
                 "Resource group not found (probably already deleted)",
                 status_code=231,  # Custom status code for easier monitoring from GitHub webhook logs
             )
+        resource_group_name = resource_groups[0].name
+        logger.info(f"Deleting {resource_group_name=}")
         try:
             client.resource_groups.begin_delete(
-                resource_groups[0].name,
+                resource_group_name,
                 force_deletion_types="Microsoft.Compute/virtualMachines",
             )
         except azure.core.exceptions.ResourceNotFoundError:
@@ -823,6 +826,7 @@ def tag(request: func.HttpRequest) -> func.HttpResponse:
             raise ValueError
     except (KeyError, ValueError):
         return response("Invalid git ref", status_code=400)
+    logger.info(f"Tagging {resource_group_name=} {job_id=} {repository=}")
     tags = {
         "job": str(job_id),
         "repository": repository,
