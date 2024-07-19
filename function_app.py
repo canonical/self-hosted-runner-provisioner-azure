@@ -334,7 +334,9 @@ def cleanup(timer: func.TimerRequest) -> None:
             params={"$expand": "createdTime"},
         ):
             delta = now - resource_group.created_time
-            past_long_timeout = delta > datetime.timedelta(hours=3, minutes=45)
+            # Temporarily increased from 3 hours 45 minutes for
+            # https://github.com/canonical/data-platform-workflows/pull/208
+            past_long_timeout = delta > datetime.timedelta(hours=4, minutes=45)
             if past_long_timeout or (
                 # Delete VMs that haven't started a job
                 "job" not in (resource_group.tags or {})
